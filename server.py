@@ -53,10 +53,7 @@ class Server:
                     running = 0 
 
         # close all threads
-
         self.server.close()
-        for c in self.threads:
-            c.join()
 
 class Client(threading.Thread):
     def __init__(self,(client,address)):
