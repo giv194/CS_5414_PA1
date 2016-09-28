@@ -1,11 +1,27 @@
-#!/usr/bin/python           # This is client.py file
+#!/usr/bin/env python
 
-import socket               # Import socket module
+"""
+An echo client that allows the user to send multiple lines to the server.
+Entering a blank line will exit the client.
+"""
 
-s = socket.socket()         # Create a socket object
-host = socket.gethostname() # Get local machine name
-port = 12345                # Reserve a port for your service.
+import socket
+import sys
 
-s.connect((host, port))
-print s.recv(1024)
-s.close                     # Close the socket when done
+host = 'localhost'
+port = 20000
+size = 1024
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.connect((host,port))
+sys.stdout.write('%')
+
+while 1:
+    # read from keyboard
+    line = sys.stdin.readline()
+    if line == '\n':
+        break
+    s.send(line)
+    data = s.recv(size)
+    sys.stdout.write(data)
+    sys.stdout.write('%')
+s.close()
