@@ -1,0 +1,4 @@
+#!/bin/sh
+X=$(lsof -i :$1 | grep LISTEN)
+IFS=' ' read -ra ID <<< "$X"
+kill ${ID[1]}
