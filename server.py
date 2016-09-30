@@ -11,9 +11,8 @@ import sys
 import threading
 
 class Server:
-    def __init__(self, s_id, s_n, s_master_port):
-        self.id = s_id
-        self.n = s_n
+    def __init__(self, process, s_master_port):
+        self.process = process
         self.host = ''
         self.port = s_master_port
         self.backlog = 5
@@ -38,6 +37,10 @@ class Server:
         input = [self.server,sys.stdin]
         running = 1
         while running:
+
+            if self.id == 1:
+                SendToProcess(10000).run("hello")
+
             inputready,outputready,exceptready = select.select(input,[],[])
             for s in inputready:
 
@@ -50,7 +53,7 @@ class Server:
                 elif s == sys.stdin:
                     # handle standard input
                     junk = sys.stdin.readline()
-                    running = 0 
+                    running = 0
 
         # close all threads
         self.server.close()
@@ -74,9 +77,46 @@ class Client(threading.Thread):
                 self.client.close()
                 running = 0
 
+class SendToProcess(threading.Thread):
+    def __init__(self,destPort):
+        threading.Thread.__init__(self)
+        self.port = destPort
+        self.size = 1024
+
+    def run(self, message):
+        host = ''
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.connect((host,self.port))
+        s.send(message)
+        s.close()
+
+
 if __name__ == "__main__":
     p_id = int(sys.argv[1])
     p_n = int(sys.argv[2])
     p_master_port = int(sys.argv[3])
-    s = Server(p_id, p_n, p_master_port)
+    process = Process(p_id, p_n)
+    s = Server(process, p_master_port)
     s.run()
+
+class Process():
+    # We should probably make this a monitor.
+    def __init__(self, p_id, n):
+        self.id = p_id
+        self.n = n
+        self.songs = {}
+        self.processes = Set([])
+        self.up_set = Set([])
+        self.master_commands = {}
+
+    def processMasterCommand(self, command):
+        command_array = command.split(" ")
+        command_key = command_array[0]
+        if command_key == "crash":
+            self.crash();
+        else:
+            self.master_commands[command_key] = command
+
+
+    def crash():
+        exit(0)
