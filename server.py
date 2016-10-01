@@ -126,9 +126,9 @@ class Process():
         command_array = command.split(" ")
         command_key = command_array[0]
         if(port == self.m_port): #PROCESS MASTER COMMANDS:
-            print 'Command key is:' , command_key.replace('\n', '')
+            print 'Master command is:' , command_key.replace('\n', '')
             if command_key.replace('\n', '') == "crash":
-                print "Crashing!!!!!"
+                print "CRASHING!!!!!"
                 self.crash()
             else:
                 self.master_commands[command_key] = command
