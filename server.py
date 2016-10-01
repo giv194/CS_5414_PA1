@@ -16,8 +16,8 @@ process_lock = threading.Lock()
 thread_list = []
 
 # Timeout value
-TIMEOUT = 0.3
-HB_TIMEOUT = 0.9*TIMEOUT
+TIMEOUT = 0.7
+HB_TIMEOUT = 0.2*TIMEOUT
 
 GPORT = 20000
 
@@ -27,6 +27,9 @@ ELECTION_ACK = "ELECTION_ACK"
 UR_ELECTED = "UR_ELECTED"
 HEARTBEAT = "HEARTBEAT"
 HEARTBEAT_ACK = "HEARTBEAT_ACK"
+
+def check_port(port):
+    return port >= GPORT and port < (GPORT+10000)
 
 class TimeOut():
     def __init__(self, time_out_period = TIMEOUT):
@@ -67,25 +70,26 @@ class Server(threading.Thread):
         t_o = TimeOut()
         hb_t_0 = TimeOut(HB_TIMEOUT)
         while running:
-            if self.port >= GPORT and self.port <= 29999:
+            if check_port(self.port):
                 if not self.process.isCoordinator():
                     if not t_o.waiting():
                         print "timeout"
                         self.process.elect_coordinator()
+                        continue
                 else:
                     if not hb_t_0.waiting():
-                        for p_id in range(0,process.n):
-                            Connection_Client(GPORT+p_id, p_id, HEARTBEAT)
+                        for p_id in range(0,self.process.n):
+                            if p_id != self.process.id:
+                                try:
+                                    Connection_Client(GPORT+p_id, self.process.id, HEARTBEAT).run()
+                                except:
+                                    continue
                         hb_t_0.reset()
             inputready,outputready,exceptready = select.select(input,[],[])
             for s in inputready:
-
                 if s == self.server:
                     # handle the server socket
-                    if (self.port - GPORT) == process.coordinator:
-                        print "reset?"
-                        t_o.reset()
-                    c = Client(self.server.accept(), self.process, self.port)
+                    c = Client(self.server.accept(), self.process, self.port, t_o)
                     c.start()
                     self.threads.append(c)
 
@@ -106,34 +110,42 @@ class Server(threading.Thread):
             c.join()
 
 class Client(threading.Thread):
-    def __init__(self,(client,address), process, port):
+    def __init__(self,(client,address), process, port, t_o=None):
         threading.Thread.__init__(self)
         self.client = client
         self.address = address
         self.port = port
         self.size = 1024
         self.process = process
+        self.server_t_o = t_o
 
-        print 'Got connection from', address, ':', port
+        # print 'Got connection from', address, ':', port
 
     def run(self):
         running = 1
         while running:
             # using try except block because second ask for data the sever has closed the connection
-            try:
+            # try:
                 data = self.client.recv(self.size)
                 if data:
+                    self.server_t_o.reset()
                     self.client.send(data)
-                    print data, ':', self.port
+                    # print data, ':', self.port
                     process_lock.acquire()
                     self.process.process_command(data, self.port)
                     process_lock.release()
+
+                    if check_port(self.port):
+                        split = data.split("_")
+                        if len(split) == 2:
+                            p_id = int(split[1].split("=")[1])
+                            self.server_t_o.reset()
                 else:
                     self.client.close()
                     running = 0
                 return data
-            except:
-                running = 0
+            # except :
+                # running = 0
 
 class Connection_Client(threading.Thread):
     def __init__(self, port, p_id, message):
@@ -146,6 +158,8 @@ class Connection_Client(threading.Thread):
         size = 1024
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.connect((host, self.port))
+        if check_port(self.port):
+            self.message += "_id="+str(self.p_id)
         s.send(self.message)
         s.close()
 
@@ -169,7 +183,7 @@ class Process():
     def isCoordinator(self):
         return self.coordinator == self.id
 
-    def process_master_command(self, command, port):
+    def process_command(self, command, port):
         command_array = command.split(" ")
         command_key = command_array[0]
         if(port == self.m_port): #PROCESS MASTER COMMANDS:
@@ -179,9 +193,6 @@ class Process():
                 self.crash()
             else:
                 self.master_commands[command_key] = command
-
-    def process_p_request(self,request):
-        print "the request: "+request
 
     def crash(self):
         subprocess.Popen(['./kill_script', str(self.m_port)], stdout=open('/dev/null'), stderr=open('/dev/null'))
@@ -195,7 +206,10 @@ class Process():
             self.coordinator = self.id
             for p_id in self.up_set:
                 if p_id != self.id:
-                    Connection_Client(GPORT+ p_id, p_id, I_AM_COORDINATOR)
+                    try:
+                        Connection_Client(GPORT+ p_id, p_id, I_AM_COORDINATOR).run()
+                    except:
+                        continue
         else:
             # ping coordinator
             try:
