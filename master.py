@@ -81,6 +81,7 @@ def send(index, data):
         wait_ack_lock.release()
     pid = int(index)
     if pid >= 0 and pid in threads:
+        print data
         threads[pid].send(data)
         return
     pid = leader

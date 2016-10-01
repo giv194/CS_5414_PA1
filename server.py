@@ -124,28 +124,32 @@ class Client(threading.Thread):
     def run(self):
         running = 1
         while running:
-            # using try except block because second ask for data the sever has closed the connection
-            # try:
+            try:
                 data = self.client.recv(self.size)
                 if data:
-                    self.server_t_o.reset()
-                    self.client.send(data)
+                    #echo server:
+                    #self.client.send(data)
                     # print data, ':', self.port
                     process_lock.acquire()
-                    self.process.process_command(data, self.port)
+                    to_return = self.process.process_command(data, self.port)
+                    # if to_return != None:
+                    #     self.client.send(to_return)
                     process_lock.release()
 
                     if check_port(self.port):
                         split = data.split("_")
-                        if len(split) == 2:
+                        if len(split) == 2 and split[0] == HEARTBEAT:
                             p_id = int(split[1].split("=")[1])
-                            self.server_t_o.reset()
+                            if not self.process.coordinator:
+                                print "ALERT - NO COORDINATOR SO SETTING COORDINATOR ",p_id
+                                self.process.coordinator = p_id
+                            if p_id == self.process.coordinator:
+                                self.server_t_o.reset()
                 else:
                     self.client.close()
                     running = 0
-                return data
-            # except :
-                # running = 0
+            except:
+                running = 0
 
 class Connection_Client(threading.Thread):
     def __init__(self, port, p_id, message):
@@ -176,23 +180,71 @@ class Process():
         self.port = self_port
         self.m_port = master_port
         self.songs = {}
-        self.state = None
-        self.up_set = set([x for x in range(0,n)])
+        self.up_set = set([x for x in range(n)])
         self.master_commands = {}
+
+        #Test cases:
+        self.vote_no = False
+        self.vote_crash = False
+        self.ack_crash = False
+        self.vote_req_crash = []
+        self.precom_crash = []
+        self.com_crash = []
 
     def isCoordinator(self):
         return self.coordinator == self.id
 
     def process_command(self, command, port):
-        command_array = command.split(" ")
-        command_key = command_array[0]
+        c_array = command.split(" ")
+
         if(port == self.m_port): #PROCESS MASTER COMMANDS:
-            print 'Command key is:' , command_key.replace('\n', '')
-            if command_key.replace('\n', '') == "crash":
-                print "Crashing!!!!!"
+            print 'Master command is: ' + (" ".join(c_array))
+            #Crash Command:
+            if c_array[0] == "crash":
+                print (" ".join(c_array))
                 self.crash()
-            else:
-                self.master_commands[command_key] = command
+
+            # FLag Commands:
+            elif c_array[0] == "vote" and c_array[1] == "NO":
+                print(" ".join(c_array))
+                self.vote_no = True
+            elif c_array[0] == "crashAfterVote":
+                print (" ".join(c_array))
+                self.vote_crash = True
+            elif c_array[0] == "crashAfterAck":
+                print(" ".join(c_array))
+                self.ack_crash == True
+            elif c_array[0] == "crashVoteReq":
+                print(" ".join(c_array))
+                for each in c_array[1:]:
+                    self.vote_req_crash.append(int(each))
+            elif c_array[0] == "crashPartialPreCommit":
+                print(" ".join(c_array))
+                for each in c_array[1:]:
+                    self.precom_crash.append(int(each))
+            elif c_array[0] == "crashPartialCommit":
+                print(" ".join(c_array))
+                for each in c_array[1:]:
+                    self.com_crash.append(int(each))
+
+            # Get Command
+            elif c_array[0] == "get":
+                print(" ".join(c_array))
+                try:
+                    to_return = "resp " + str(self.songs[c_array[1]])
+                except:
+                    to_return = "NONE"
+                return to_return
+
+            # 3PC commands:
+            elif c_array[0] == "add"  and self.coordinator == self.id:
+                self.songs[c_array[1]] = c_array[2]
+            elif c_array[0] == "delete" and self.coordinator == self.id:
+                self.songs = {key: value for key, value in self.songs.items() if key != c_array[1]}
+        else:
+            print 'Process ', port, ' wants your attention'
+            print c_array[0]
+        return command
 
     def crash(self):
         subprocess.Popen(['./kill_script', str(self.m_port)], stdout=open('/dev/null'), stderr=open('/dev/null'))
