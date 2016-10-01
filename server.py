@@ -16,7 +16,7 @@ process_lock = threading.Lock()
 thread_list = []
 
 # Timeout value
-TIMEOUT = 0.7
+TIMEOUT = 1
 HB_TIMEOUT = 0.2*TIMEOUT
 
 GPORT = 20000
@@ -92,6 +92,8 @@ class Server(threading.Thread):
                     c = Client(self.server.accept(), self.process, self.port, t_o)
                     c.start()
                     self.threads.append(c)
+                    if not check_port(self.port):
+                        self.process.m_client = c
 
                 # elif s == sys.stdin:
                 #     # handle standard input
@@ -179,6 +181,7 @@ class Process():
         self.n = n
         self.port = self_port
         self.m_port = master_port
+        self.m_client = None
         self.songs = {}
         self.up_set = set([x for x in range(n)])
         self.master_commands = {}
@@ -256,6 +259,7 @@ class Process():
         if self.coordinator == self.id:
             print "I AM THE COORDINATOR"
             self.coordinator = self.id
+            self.m_client.send("coordinator "+str(self.id))
             for p_id in self.up_set:
                 if p_id != self.id:
                     try:
