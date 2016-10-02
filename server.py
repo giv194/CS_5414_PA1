@@ -246,7 +246,8 @@ class Process():
         return self.coordinator == self.id
 
     def process_command(self, command_string, port):
-        c_array = command_string.replace("\n", "").split(" ")
+        command_string = command_string.replace("\n", "")
+        c_array = command_string.split(" ")
         if(port == self.m_port): #PROCESS MASTER COMMANDS:
             print 'Master command is: ' + (" ".join(c_array))
             #Crash Command:
@@ -288,13 +289,13 @@ class Process():
                 # self.songs[c_array[1]] = c_array[2]
                 self.master_commands["commit"] = command_string
                 print c_array
-                self.send_req(VOTE_REQ, VOTE_STAGE, self.create_request(c_array))
+                self.send_req(VOTE_REQ, VOTE_STAGE, command_string)
                 return "ack commit"
             elif command == "delete" and self.coordinator == self.id:
                 # self.songs = {key: value for key, value in self.songs.items() if key != c_array[1]}
                 self.master_commands["commit"] = command_string
                 print c_array[1:]
-                self.send_req(VOTE_REQ, VOTE_STAGE, self.create_request(c_array))
+                self.send_req(VOTE_REQ, VOTE_STAGE, command_string)
                 return "ack commit"
         else:
             # commands from process to coordinator
@@ -314,18 +315,21 @@ class Process():
             if PRE_COMMIT in c_array[0]:
                 self.recieve_request(command_string)
 
+            if COMMIT in c_array[0]:
+                self.recieve_request(command_string)
+
             if HEARTBEAT not in c_array[0]:
                 print 'Process ', port, ' wants your attention'
                 print c_array[0]
         # return 'wtf?'
         return None
 
-    def create_request(self, c_array):
-        request = "commit=" + c_array[0] + " name=" + c_array[1]
-        if len(c_array) == 3:
-            request +=  " url=" + c_array[2]
-        print request
-        return request
+    # def create_request(self, c_array):
+    #     request = "commit=" + c_array[0] + " name=" + c_array[1]
+    #     if len(c_array) == 3:
+    #         request +=  " url=" + c_array[2]
+    #     print request
+    #     return request
 
     def crash(self):
         subprocess.Popen(['./kill_script', str(self.m_port)], stdout=open('/dev/null'), stderr=open('/dev/null'))
@@ -395,10 +399,10 @@ class Process():
                     self.commit(self.master_commands["commit"])
                     self.pc_stage = 0
 
-        else:
-            # NOT the coordinator
-            if not p_t_o.waiting():
-                pwait
+        # else:
+        #     # NOT the coordinator
+        #     if not p_t_o.waiting():
+        #         pwait
 
     def commit(self,request):
         c_array = request.split(" ")
@@ -435,6 +439,7 @@ class Process():
         message = ""
         if data["command"] == VOTE_REQ:
             self.master_commands["commit"] = data["message"].strip()
+            print self.master_commands
             message = VOTE_YES
             if self.master_commands["vote"] == True:
                 message = SHOULD_ABORT
