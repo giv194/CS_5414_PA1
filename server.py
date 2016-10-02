@@ -43,9 +43,9 @@ HEARTBEAT_ACK = "HEARTBEAT_ACK"
 VOTE_REQ = "VOTE_REQ"
 SHOULD_ABORT = "SHOULD_ABORT"
 VOTE_YES = "VOTE_YES"
-PRE_COMMIT = "PRE_COMMIT"
-PRE_COMMIT_ACK = "PRE_COMMIT_ACK"
-COMMIT = "COMMIT"
+PRE_COMMIT = "PRE_COMMIT2"
+PRE_COMMIT_ACK = "PRE_COMMIT_ACK3"
+COMMIT = "COMMIT3"
 STABLE = "STABLE"
 ABORT = "ABORT"
 # 3PC stages
@@ -329,15 +329,15 @@ class Process():
             if VOTE_REQ in c_array[0]:
                  self.recieve_request(command_string)
 
-            if PRE_COMMIT in c_array[0]:
+            elif PRE_COMMIT in c_array[0]:
                 self.recieve_request(command_string)
 
-            if COMMIT in c_array[0]:
+            elif COMMIT in c_array[0]:
                 self.recieve_request(command_string)
 
             if HEARTBEAT not in c_array[0]:
                 print 'Process ', port, ' wants your attention'
-                print c_array[0]
+                print command_string
         # return 'wtf?'
         # return "ack abort"
         return None
@@ -385,7 +385,7 @@ class Process():
                     for p_id in range(self.n):
                         if p_id != self.coordinator and p_id not in self.states:
                             self.up_set.discard(p_id)
-                            
+
                     for p_id in self.up_set:
                         if p_id != self.coordinator and self.states[p_id] == False:
                             should_abort = True
@@ -524,9 +524,11 @@ class Process():
                 should_crash_after_send = True
 
         elif data["command"] == COMMIT:
+            message = COMMIT
             self.log(COMMIT)
             self.commit(self.master_commands["commit"])
             self.pc_stage = 0
+            self.prev_stage = 0
             # no need to send message since it's commit, so we return
             return
 
