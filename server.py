@@ -119,7 +119,7 @@ class Server(threading.Thread):
                         if not t_o.waiting():
                             print "timeout"
                             self.process.elect_coordinator()
-                            continue
+                            t_o.reset()
                     else:
                         if not hb_t_0.waiting():
                             for p_id in range(0,self.process.n):
@@ -127,7 +127,7 @@ class Server(threading.Thread):
                                     try:
                                         Connection_Client(GPORT+p_id, self.process.id, HEARTBEAT).run()
                                     except:
-                                        continue
+                                        donothing = 0
                             hb_t_0.reset()
                 else:
                     self.process.do_3pc(p_t_o, c_t_o)
@@ -187,11 +187,9 @@ class Client(threading.Thread):
                         split = data.split(" ")
                         if split[0] == HEARTBEAT:
                             p_id = int([s for s in split if "id=" in s][0].split("=")[1])
-                            if self.process.coordinator == None:
-                                print "ALERT - NO COORDINATOR SO SETTING COORDINATOR ",p_id
-                                self.process.coordinator = p_id
-                            if p_id == self.process.coordinator:
-                                self.server_t_o.reset()
+                            print "SETTING COORDINATOR ", p_id
+                            self.process.coordinator = p_id
+                            self.server_t_o.reset()
                 else:
                     self.client.close()
                     running = 0
@@ -345,26 +343,15 @@ class Process():
             self.m_client.client.send("ack abort")
 
     def elect_coordinator(self):
-        self.up_set.discard(self.coordinator)
-        self.coordinator = min(self.up_set)
+        if self.coordinator == None:
+            self.coordinator = 0
+        else:
+            self.coordinator = (self.coordinator + 1) % self.n
         print "ELECTING NEW COORDINATOR: "+str(self.coordinator)
         if self.coordinator == self.id:
             print "I AM THE COORDINATOR"
-            self.coordinator = self.id
             if self.m_client:
                 self.m_client.client.send("coordinator " + str(self.id) + "\n")
-            for p_id in self.up_set:
-                if p_id != self.id:
-                    try:
-                        Connection_Client(GPORT+ p_id, self.id, I_AM_COORDINATOR).run()
-                    except:
-                        continue
-        else:
-            # ping coordinator
-            try:
-                Connection_Client(GPORT+n_c_pid, self.id, UR_ELECTED).run()
-            except:
-                self.elect_coordinator()
 
     # 3PC methods
     def do_3pc(self, p_t_o, c_t_o):
@@ -424,7 +411,7 @@ class Process():
                     print "sending requests: "+str(p_id)
                     Connection_Client(GPORT+ p_id, self.id, message).run()
                 except:
-                    self.states[self.id] = ABORT
+                    self.states[self.id] = False
                     continue
 
     def send_precommit_request(self):
