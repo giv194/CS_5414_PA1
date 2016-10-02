@@ -17,7 +17,10 @@ thread_list = []
 
 # Timeout value
 TIMEOUT = 5
-HB_TIMEOUT = 0.2*TIMEOUT
+HB_TIMEOUT = 0.2 * TIMEOUT
+
+TIMEOUT = 5
+HB_TIMEOUT = 0.05 * TIMEOUT
 
 GPORT = 20000
 
@@ -69,13 +72,17 @@ class Server(threading.Thread):
         running = 1
         t_o = TimeOut()
         hb_t_0 = TimeOut(HB_TIMEOUT)
+        pto = TimeOut
+        cto = 
         while running:
             if check_port(self.port):
                 if not self.process.isCoordinator():
                     if not t_o.waiting():
-                        print "timeout"
                         self.process.elect_coordinator()
                         continue
+                    if not self.process.state != 0 and cto.waiting():
+                        self.process.do3pc()
+                        cto.reset()
                 else:
                     if not hb_t_0.waiting():
                         for p_id in range(0,self.process.n):
@@ -85,6 +92,10 @@ class Server(threading.Thread):
                                 except:
                                     continue
                         hb_t_0.reset()
+                    if not self.process.state != 0 and pto.waiting():
+                        self.process.do3pc()
+                        pto.reset()
+
             inputready,outputready,exceptready = select.select(input,[],[], 0)
             for s in inputready:
                 if s == self.server:
@@ -136,16 +147,6 @@ class Client(threading.Thread):
                     if to_return != None:
                         self.client.send(str(to_return) + "\n")
                     process_lock.release()
-
-                    if check_port(self.port):
-                        split = data.split("_")
-                        if len(split) == 2 and split[0] == HEARTBEAT:
-                            p_id = int(split[1].split("=")[1])
-                            if not self.process.coordinator:
-                                print "ALERT - NO COORDINATOR SO SETTING COORDINATOR ",p_id
-                                self.process.coordinator = p_id
-                            if p_id == self.process.coordinator:
-                                self.server_t_o.reset()
                 else:
                     self.client.close()
                     running = 0
@@ -183,7 +184,10 @@ class Process():
         self.m_client = None
         self.songs = {}
         self.up_set = set([x for x in range(n)])
-        self.master_commands = {}
+        self.vote_set = []
+
+        self.master_commands = []
+        self.state = 0
 
         #Test cases:
         self.vote_no = False
@@ -238,16 +242,96 @@ class Process():
 
             # 3PC commands:
             elif c_array[0] == "add"  and self.coordinator == self.id:
-                self.songs[c_array[1]] = c_array[2]
-                return "ack commit"
+                self.master_commands = [x for x in c_array]
+                self.state = 1
+                self.do3pc()
+                
+                # self.songs[c_array[1]] = c_array[2]
+                # return "ack commit"
             elif c_array[0] == "delete" and self.coordinator == self.id:
-                self.songs = {key: value for key, value in self.songs.items() if key != c_array[1]}
-                return "ack commit"
+                # self.songs = {key: value for key, value in self.songs.items() if key != c_array[1]}
+                # return "ack commit"
+                self.master_commands = [x for x in c_array]
+                self.state = 1
+                self.do3pc()
         else:
+            split = command.split("_")
+            if split[0] == HEARTBEAT:
+                p_id = int(split[1].split("=")[1])
+                if not self.process.coordinator:
+                    print "ALERT - NO COORDINATOR SO SETTING COORDINATOR ",p_id
+                    self.process.coordinator = p_id
+                if p_id == self.process.coordinator:
+                    self.server_t_o.reset()
+            elif split[0] == "VOTE_REQ":
+                self_state = 1
+                self.do3pc()
+            elif split[0] == "PRECOMMIT":
+                self_state = 2
+                self.do3pc()
+            elif split[0] == "add":
+                self.songs[split[1]] = split[2].split("=")[0]
+                self.state = 0
+            elif split[0] == "delete":
+                self.songs = {key: value for key, value in self.songs.items() if key != split[1].split("=")[0]}
+                self.state = 0
             print 'Process ', port, ' wants your attention'
-            print c_array[0]
         # return 'wtf?'
         return None
+
+    def do3pc(self):
+        if(self.isCoordinator):
+            if self.state == 1:
+                for p_id in self.up_set:
+                    if p_id != self.id:
+                        try:
+                            Connection_Client(GPORT + p_id, p_id, "VOTE_REQ").run()
+                        except:
+                            continue
+                self.state += 1
+            elif self.state == 2:
+                self.vote_set.append(self.id)
+                if(set(self.vote_set) == set(self.up_set)):
+                    for p_id in self.up_set:
+                    if p_id != self.id:
+                        try:
+                            Connection_Client(GPORT + p_id, p_id, "PRECOMMIT").run()
+                        except:
+                            continue
+                self.vote_set = []
+                self.state += 1
+            elif self.state == 3
+                self.vote_set.append(self.id)
+                self.up_set = sorted([x for x in self.vote_set])
+
+                if master_commands[0] == "add"
+                    self.songs[master_commands[1]] = master_commands[2]
+                elif master_commands[0] == "delete" and self.coordinator == self.id:
+                    self.songs = {key: value for key, value in self.songs.items() if key != master_commands[1]}
+
+                for p_id in self.up_set:
+                    if p_id != self.id:
+                        try:
+                            Connection_Client(GPORT + p_id, p_id, "_".join(self.master_commands)).run()
+                        except:
+                            continue
+            self.state = 0
+        else:
+            if self.state == 1:
+                try:
+                    Connection_Client(GPORT + self.coordinator, p_id, "yes").run()
+                except:
+                    continue
+                self_state = -1
+            elif self.state == 2:
+                try:
+                    Connection_Client(GPORT + self.coordinator, p_id, "ack").run()
+                except:
+                    continue
+                self_state = -1
+            elif self_state == -1:
+                print "Timed out, Run Termination!!"
+                self.state = 0
 
     def crash(self):
         subprocess.Popen(['./kill_script', str(self.m_port)], stdout=open('/dev/null'), stderr=open('/dev/null'))
