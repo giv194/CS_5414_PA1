@@ -146,6 +146,7 @@ class Server(threading.Thread):
                     junk = sys.stdin.readline()
                     print "Shutting down server %d ..."%(self.port%20000)
                     running = 0
+            time.sleep(0.2*HB_TIMEOUT)
 
         # close all threads
         self.server.close()
@@ -187,7 +188,10 @@ class Client(threading.Thread):
                         split = data.split(" ")
                         if split[0] == HEARTBEAT:
                             p_id = int([s for s in split if "id=" in s][0].split("=")[1])
-                            print "SETTING COORDINATOR ", p_id
+                            if p_id != self.process.coordinator:
+                                print "SETTING COORDINATOR ", p_id
+                                with open("output_"+str(self.process.id) +".txt", "a+") as myfile:
+                                    myfile.write("Setting new coordinator "+str(p_id)+"\n" )
                             self.process.coordinator = p_id
                             self.server_t_o.reset()
                 else:
@@ -239,6 +243,9 @@ class Process():
         # self.vote_req_crash = []
         # self.precom_crash = []
         # self.com_crash = []
+
+        with open("output_"+ str(self.id)+".txt", "w") as myfile:
+            myfile.write("")
 
     def isCoordinator(self):
         return self.coordinator == self.id
@@ -350,6 +357,8 @@ class Process():
         print "ELECTING NEW COORDINATOR: "+str(self.coordinator)
         if self.coordinator == self.id:
             print "I AM THE COORDINATOR"
+            with open("output_"+str(self.id)+".txt", "a+") as myfile:
+                myfile.write("I AM THE COORDINATOR "+str(self.id)+"\n" )
             if self.m_client:
                 self.m_client.client.send("coordinator " + str(self.id) + "\n")
 
