@@ -401,7 +401,7 @@ class Process():
             if c_array[1] in self.songs: del self.songs[c_array[1]]
         if self.is_coordinator():
             if self.m_client:
-                self.m_client.client.send("ack commit")
+                self.m_client.client.send("ack commit" + "\n")
         self.master_commands= copy.deepcopy(BASE_STATE)
 
 
@@ -418,8 +418,13 @@ class Process():
         print "I AM ABORTING"
         if self.is_coordinator():
             if self.m_client:
+<<<<<<< HEAD
                 self.m_client.client.send("ack abort")
         self.master_commands = copy.deepcopy(BASE_STATE)
+=======
+                self.m_client.client.send("ack abort" + "\n")
+        self.master_commands= copy.deepcopy(BASE_STATE)
+>>>>>>> 3pc_paul
 
     # coordinator
     def send_req(self, message, stage, request=""):
