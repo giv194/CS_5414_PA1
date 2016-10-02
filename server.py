@@ -23,7 +23,7 @@ BASE_STATE = {
     "vote": False,
     "crashAfterVote": False,
     "crashAfterAck": False,
-    "crashVoteReq": False,
+    "crashVoteREQ": False,
     "crashPartialCommit": False,
     "crashPartialPreCommit": False
 }
@@ -273,15 +273,16 @@ class Process():
             elif command == "crashAfterAck":
                 print(" ".join(c_array))
                 self.master_commands[command] = True
-            elif command == "crashVoteReq":
+            elif command == "crashVoteREQ":
                 print(" ".join(c_array))
-                self.master_commands[command] = [int(i) for i in c_array[1:]]
+                self.master_commands[command] = [int(i) for i in c_array[1:] if i]
+                print self.master_commands[command]
             elif command == "crashPartialPreCommit":
                 print(" ".join(c_array))
-                self.master_commands[command] = [int(i) for i in c_array[1:]]
+                self.master_commands[command] = [int(i) for i in c_array[1:] if i]
             elif command == "crashPartialCommit":
                 print(" ".join(c_array))
-                self.master_commands[command] = [int(i) for i in c_array[1:]]
+                self.master_commands[command] = [int(i) for i in c_array[1:] if i]
 
             # Get Command
             elif command == "get":
@@ -310,6 +311,10 @@ class Process():
                 data = parse_process_message(command_string)
                 self.states[data["id"]] = True
                 print self.states
+            if SHOULD_ABORT in c_array[0]:
+                data = parse_process_message(command_string)
+                self.states[data["id"]] = False
+                print self.states
 
             if PRE_COMMIT_ACK in c_array[0]:
                 data = parse_process_message(command_string)
@@ -329,7 +334,8 @@ class Process():
                 print 'Process ', port, ' wants your attention'
                 print c_array[0]
         # return 'wtf?'
-        return "ack abort"
+        # return "ack abort"
+        return None
 
     # def create_request(self, c_array):
     #     request = "commit=" + c_array[0] + " name=" + c_array[1]
@@ -340,6 +346,7 @@ class Process():
 
     def crash(self):
         subprocess.Popen(['./kill_script', str(self.m_port)], stdout=open('/dev/null'), stderr=open('/dev/null'))
+        exit(0)
 
 
     def elect_coordinator(self):
@@ -365,8 +372,9 @@ class Process():
                     should_abort = False
                     if "vote" in self.master_commands:
                         should_abort = self.master_commands["vote"]
+
                     for p_id in self.up_set:
-                        if p_id != self.coordinator and ( p_id not in self.states or self.states[p_id] == False ):
+                        if p_id != self.coordinator and p_id in self.states and self.states[p_id] == False :
                             should_abort = True
                     if should_abort:
                         print("aborted!")
@@ -433,14 +441,34 @@ class Process():
         self.states = {}
         if len(request) > 0:
             message += " "+request
-        for p_id in self.up_set:
+        pids = self.up_set
+        should_crash_after_send = False
+
+        print "doing send request ",stage," and message ", message
+        if self.pc_stage == VOTE_STAGE and self.master_commands['crashVoteREQ'] != False:
+            pids = self.master_commands['crashVoteREQ']
+            should_crash_after_send = True
+
+        elif self.pc_stage == PRECOMMIT_STAGE and self.master_commands['crashPartialPreCommit'] != False:
+            pids = self.master_commands['crashPartialPreCommit']
+            should_crash_after_send = True
+
+        elif self.pc_stage == COMMIT_STAGE and self.master_commands['crashPartialCommit'] != False:
+            pids = self.master_commands['crashPartialCommit']
+            should_crash_after_send = True
+
+
+        for p_id in pids:
             if p_id != self.id:
                 try:
                     print "sending requests: "+str(p_id)
                     Connection_Client(GPORT+ p_id, self.id, message).run()
                 except:
-                    self.states[self.id] = False
                     continue
+
+        if should_crash_after_send:
+            print "CRASHING"
+            self.crash()
 
     # process
     def recieve_request(self, request):
