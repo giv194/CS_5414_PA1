@@ -234,6 +234,7 @@ class Process():
         self.up_set = set([x for x in range(n)])
 
         self.pc_stage = 0
+        self.prev_stage = 0
         self.states = {}
 
         #Test cases:
@@ -334,14 +335,6 @@ class Process():
     def crash(self):
         subprocess.Popen(['./kill_script', str(self.m_port)], stdout=open('/dev/null'), stderr=open('/dev/null'))
 
-    def send_abort(self):
-        for p_id in range(0,self.n):
-            if p_id != self.id:
-                try:
-                    Connection_Client(GPORT+ p_id, self.id, SHOULD_ABORT).run()
-                except:
-                    continue
-        self.abort()
 
     def elect_coordinator(self):
         if self.coordinator == None:
@@ -361,7 +354,6 @@ class Process():
         # check if coordinator
         if self.is_coordinator():
             if not c_t_o.waiting():
-
                 # coordinator VOTE REQ STAGE
                 if self.pc_stage == VOTE_STAGE:
                     should_abort = False
@@ -389,11 +381,15 @@ class Process():
                 if self.pc_stage == COMMIT_STAGE:
                     self.commit(self.master_commands["commit"])
                     self.pc_stage = 0
+        else:
+            # NOT the coordinator
+            if not p_t_o.waiting():
+                if self.prev_stage == self.pc_stage:
+                    do_stuff = 0
+                else:
+                    p_t_o.reset()
 
-        # else:
-        #     # NOT the coordinator
-        #     if not p_t_o.waiting():
-        #         pwait
+                
 
     def commit(self,request):
         print "I AM COMMITTING"
@@ -408,12 +404,22 @@ class Process():
                 self.m_client.client.send("ack commit")
         self.master_commands= copy.deepcopy(BASE_STATE)
 
+
+    def send_abort(self):
+        for p_id in range(0,self.n):
+            if p_id != self.id:
+                try:
+                    Connection_Client(GPORT+ p_id, self.id, SHOULD_ABORT).run()
+                except:
+                    continue
+        self.abort()
+
     def abort(self):
         print "I AM ABORTING"
         if self.is_coordinator():
             if self.m_client:
                 self.m_client.client.send("ack abort")
-        self.master_commands= copy.deepcopy(BASE_STATE)
+        self.master_commands = copy.deepcopy(BASE_STATE)
 
     # coordinator
     def send_req(self, message, stage, request=""):
@@ -430,22 +436,27 @@ class Process():
                     self.states[self.id] = False
                     continue
 
-
     # process
     def recieve_request(self, request):
         data = parse_process_message(request)
         message = ""
         if data["command"] == VOTE_REQ:
             self.master_commands["commit"] = data["message"].strip()
-            print self.master_commands
             message = VOTE_YES
+            self.pc_stage = PRECOMMIT_STAGE
+            print self.master_commands
+
             if self.master_commands["vote"] == True:
                 message = SHOULD_ABORT
+                self.pc_stage = 0
 
         elif data["command"] == PRE_COMMIT:
             message = PRE_COMMIT_ACK
+            self.pc_stage = COMMIT_STAGE
+
         elif data["command"] == COMMIT:
             self.commit(self.master_commands["commit"])
+            self.pc_stage = 0
             return
 
         try:
