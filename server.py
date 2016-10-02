@@ -13,6 +13,8 @@ import subprocess
 import time
 import copy
 import json
+from socket import error as SocketError
+import errno
 
 process_lock = threading.Lock()
 thread_list = []
@@ -174,7 +176,7 @@ class Client(threading.Thread):
     def run(self):
         running = 1
         while running:
-            # try:
+            try:
                 data = self.client.recv(self.size)
                 if data:
                     #echo server:
@@ -199,8 +201,10 @@ class Client(threading.Thread):
                 else:
                     self.client.close()
                     running = 0
-            # except:
-                # running = 0
+            except SocketError as e:
+                if e.errno != errno.ECONNRESET:
+                    raise # Not error we are looking for
+                running = 0
 
 class Connection_Client(threading.Thread):
     def __init__(self, port, p_id, message):
@@ -268,7 +272,7 @@ class Process():
                 self.master_commands[command] = True
             elif command == "crashAfterAck":
                 print(" ".join(c_array))
-                self.master_commands[command] == True
+                self.master_commands[command] = True
             elif command == "crashVoteReq":
                 print(" ".join(c_array))
                 self.master_commands[command] = [int(i) for i in c_array[1:]]
@@ -442,6 +446,8 @@ class Process():
     def recieve_request(self, request):
         data = parse_process_message(request)
         message = ""
+        should_crash_after_send = False
+
         if data["command"] == VOTE_REQ:
             self.master_commands["commit"] = data["message"].strip()
             message = VOTE_YES
@@ -453,19 +459,28 @@ class Process():
                 self.pc_stage = 0
                 self.abort()
 
+            if self.master_commands["crashAfterVote"]:
+                should_crash_after_send = True
+
         elif data["command"] == PRE_COMMIT:
             message = PRE_COMMIT_ACK
             self.pc_stage = COMMIT_STAGE
+            if self.master_commands["crashAfterAck"]:
+                should_crash_after_send = True
 
         elif data["command"] == COMMIT:
             self.commit(self.master_commands["commit"])
             self.pc_stage = 0
+            # no need to send message since it's commit, so we return
             return
 
         try:
             Connection_Client(GPORT+ self.coordinator, self.id, message).run()
         except:
             donothing
+
+        if should_crash_after_send:
+            self.crash()
 
 class DTLog():
     def __init__(self, process):
