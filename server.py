@@ -389,7 +389,7 @@ class Process():
                 else:
                     p_t_o.reset()
 
-                
+
 
     def commit(self,request):
         print "I AM COMMITTING"
@@ -418,13 +418,8 @@ class Process():
         print "I AM ABORTING"
         if self.is_coordinator():
             if self.m_client:
-<<<<<<< HEAD
-                self.m_client.client.send("ack abort")
-        self.master_commands = copy.deepcopy(BASE_STATE)
-=======
                 self.m_client.client.send("ack abort" + "\n")
         self.master_commands= copy.deepcopy(BASE_STATE)
->>>>>>> 3pc_paul
 
     # coordinator
     def send_req(self, message, stage, request=""):
