@@ -12,6 +12,7 @@ import threading
 import subprocess
 import time
 import copy
+import json
 
 process_lock = threading.Lock()
 thread_list = []
@@ -93,6 +94,7 @@ class Server(threading.Thread):
     def open_socket(self):
         try:
             self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             self.server.bind((self.host,self.port))
             self.server.listen(5)
         except socket.error, (value,message):
@@ -323,7 +325,7 @@ class Process():
                 print 'Process ', port, ' wants your attention'
                 print c_array[0]
         # return 'wtf?'
-        return None
+        return "ack abort"
 
     # def create_request(self, c_array):
     #     request = "commit=" + c_array[0] + " name=" + c_array[1]
@@ -449,6 +451,7 @@ class Process():
             if self.master_commands["vote"] == True:
                 message = SHOULD_ABORT
                 self.pc_stage = 0
+                self.abort()
 
         elif data["command"] == PRE_COMMIT:
             message = PRE_COMMIT_ACK
