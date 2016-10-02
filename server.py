@@ -180,7 +180,7 @@ class Client(threading.Thread):
                     process_lock.acquire()
                     to_return = self.process.process_command(data, self.port)
                     if to_return != None:
-                        self.client.send(to_return)
+                        self.client.send(str(to_return) + "\n")
                     process_lock.release()
 
                     if check_port(self.port):
@@ -246,8 +246,7 @@ class Process():
         return self.coordinator == self.id
 
     def process_command(self, command_string, port):
-        c_array = command_string.split(" ")
-
+        c_array = command_string.replace("\n", "").split(" ")
         if(port == self.m_port): #PROCESS MASTER COMMANDS:
             print 'Master command is: ' + (" ".join(c_array))
             #Crash Command:
@@ -349,7 +348,7 @@ class Process():
             print "I AM THE COORDINATOR"
             self.coordinator = self.id
             if self.m_client:
-                self.m_client.client.send("coordinator " + str(self.id))
+                self.m_client.client.send("coordinator " + str(self.id) + "\n")
             for p_id in self.up_set:
                 if p_id != self.id:
                     try:

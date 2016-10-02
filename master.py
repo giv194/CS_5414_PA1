@@ -32,10 +32,10 @@ class ClientHandler(Thread):
                 (l, rest) = self.buffer.split("\n",1)
                 self.buffer = rest
                 s = l.split()
-                print "Just s:", s
                 if len(s) < 2:
                     continue
                 if s[0] == 'coordinator':
+                    print 'coordinator', s[1]
                     leader = int(s[1])
                     wait_ack = False
                 elif s[0] == 'resp':
@@ -45,14 +45,12 @@ class ClientHandler(Thread):
                 elif s[0] == 'ack':
                     wait_ack = False
                 else:
-                    print "Else s:", s
+                    print s
             else:
                 try:
                     data = self.sock.recv(1024)
                     #sys.stderr.write(data)
-                    print "Else data:", data
-                    self.buffer += data + "\n"
-                    print "Else buffer:", self.buffer
+                    self.buffer += data
                 except:
                     print sys.exc_info()
                     self.valid = False
@@ -74,7 +72,6 @@ class ClientHandler(Thread):
 def send(index, data, set_wait_ack=False):
     global leader, live_list, threads, wait_ack
     wait = wait_ack
-    print "Command 1:", data
     while wait:
         time.sleep(0.01)
         wait = wait_ack
@@ -85,7 +82,6 @@ def send(index, data, set_wait_ack=False):
         if pid not in threads:
             print 'Master or testcase error!'
             return
-        print "Command:", data
         threads[pid].send(data)
         return
     pid = leader
@@ -104,7 +100,7 @@ def exit():
 
     for k in threads:
         threads[k].close()
-    subprocess.Popen(['./stopall'], stdout=open('/dev/null'), stderr=open('/dev/null'))
+    #subprocess.Popen(['./stopall'], stdout=open('/dev/null'), stderr=open('/dev/null'))
     time.sleep(0.1)
     os._exit(0)
 
