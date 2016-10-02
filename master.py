@@ -35,7 +35,7 @@ class ClientHandler(Thread):
                 if len(s) < 2:
                     continue
                 if s[0] == 'coordinator':
-                    print 'coordinator'
+                    print 'coordinator', s[1]
                     leader = int(s[1])
                     wait_ack = False
                 elif s[0] == 'resp':
