@@ -12,6 +12,7 @@ import threading
 import subprocess
 import time
 import copy
+import json
 
 process_lock = threading.Lock()
 thread_list = []
@@ -43,7 +44,8 @@ VOTE_YES = "VOTE_YES"
 PRE_COMMIT = "PRE_COMMIT"
 PRE_COMMIT_ACK = "PRE_COMMIT_ACK"
 COMMIT = "COMMIT"
-
+STABLE = "STABLE"
+ABORT = "ABORT"
 # 3PC stages
 VOTE_STAGE = 1
 PRECOMMIT_STAGE = 2
@@ -290,12 +292,16 @@ class Process():
                 # self.songs[c_array[1]] = c_array[2]
                 self.master_commands["commit"] = command_string
                 print c_array
+                # increase dt_index for the master
+                self.dt_index += 1
                 self.send_req(VOTE_REQ, VOTE_STAGE, command_string)
                 return None
             elif command == "delete" and self.coordinator == self.id:
                 # self.songs = {key: value for key, value in self.songs.items() if key != c_array[1]}
                 self.master_commands["commit"] = command_string
                 print c_array[1:]
+                # increase dt_index for the master
+                self.dt_index += 1
                 self.send_req(VOTE_REQ, VOTE_STAGE, command_string)
                 return None
         else:
@@ -356,12 +362,22 @@ class Process():
             if not c_t_o.waiting():
                 # coordinator VOTE REQ STAGE
                 if self.pc_stage == VOTE_STAGE:
+                    # increase dt_index for a participant
+
+                    self.log("VOTE_STAGE")
                     should_abort = False
                     if "vote" in self.master_commands:
                         should_abort = self.master_commands["vote"]
+
+                    # update up_set
                     for p_id in self.up_set:
-                        if p_id != self.coordinator and ( p_id not in self.states or self.states[p_id] == False ):
+                        if p_id != self.coordinator and p_id not in self.states:
+                            self.up_set.discard(p_id)
+                            
+                    for p_id in self.up_set:
+                        if self.states[p_id] == False:
                             should_abort = True
+
                     if should_abort:
                         print("aborted!")
                         self.send_abort()
@@ -373,12 +389,14 @@ class Process():
 
                 # coordinator PRE COMMIT STAGE
                 if self.pc_stage == PRECOMMIT_STAGE:
+                    self.log("PRECOMMIT_STAGE")
                     # log precommit state?
                     self.send_req(COMMIT, COMMIT_STAGE)
                     c_t_o.reset()
 
                 # coordinator COMMIT STAGE
                 if self.pc_stage == COMMIT_STAGE:
+                    self.log("COMMIT_STAGE")
                     self.commit(self.master_commands["commit"])
                     self.pc_stage = 0
         else:
@@ -402,6 +420,7 @@ class Process():
         if self.is_coordinator():
             if self.m_client:
                 self.m_client.client.send("ack commit" + "\n")
+        self.log(STABLE)
         self.master_commands= copy.deepcopy(BASE_STATE)
 
 
@@ -419,7 +438,8 @@ class Process():
         if self.is_coordinator():
             if self.m_client:
                 self.m_client.client.send("ack abort" + "\n")
-        self.master_commands= copy.deepcopy(BASE_STATE)
+        self.log(ABORT)
+        self.master_commands = copy.deepcopy(BASE_STATE)
 
     # coordinator
     def send_req(self, message, stage, request=""):
@@ -441,20 +461,26 @@ class Process():
         data = parse_process_message(request)
         message = ""
         if data["command"] == VOTE_REQ:
+            self.dt_index += 1
             self.master_commands["commit"] = data["message"].strip()
             message = VOTE_YES
+            self.log(message)
             self.pc_stage = PRECOMMIT_STAGE
             print self.master_commands
-
+            #Abort:
             if self.master_commands["vote"] == True:
                 message = SHOULD_ABORT
                 self.pc_stage = 0
+                self.log(message)
+                self.abort()
 
         elif data["command"] == PRE_COMMIT:
             message = PRE_COMMIT_ACK
+            self.log(message)
             self.pc_stage = COMMIT_STAGE
 
         elif data["command"] == COMMIT:
+            self.log(COMMIT)
             self.commit(self.master_commands["commit"])
             self.pc_stage = 0
             return
@@ -464,13 +490,10 @@ class Process():
         except:
             donothing
 
-class DTLog():
-    def __init__(self, process):
-        self.process = process
-        self.iteration = None
-
-    def log(phase, state):
-        print "need to log state by phase"
+    def log(self, message):
+        with open("DTLog_" + str(self.id) + ".txt", "a") as f:
+            f.write(json.dumps({"dt_index": self.dt_index,"coordinator": self.coordinator, "message": message, "stage": self.pc_stage, "db": str(self.songs), "up_set": str([x for x in self.up_set])}))
+            f.write("\n")
 
 if __name__ == "__main__":
     p_id = int(sys.argv[1])
