@@ -16,7 +16,7 @@ process_lock = threading.Lock()
 thread_list = []
 
 # Timeout value
-TIMEOUT = 1
+TIMEOUT = 5
 HB_TIMEOUT = 0.2*TIMEOUT
 
 GPORT = 20000
@@ -85,7 +85,7 @@ class Server(threading.Thread):
                                 except:
                                     continue
                         hb_t_0.reset()
-            inputready,outputready,exceptready = select.select(input,[],[])
+            inputready,outputready,exceptready = select.select(input,[],[], 0)
             for s in inputready:
                 if s == self.server:
                     # handle the server socket
@@ -95,12 +95,11 @@ class Server(threading.Thread):
                     if not check_port(self.port):
                         self.process.m_client = c
 
-                # elif s == sys.stdin:
-                #     # handle standard input
-                #     junk = sys.stdin.readline()
-                #     print "you printed "+junk +" for "+str(GPORT+(self.port-1)%2)
-                #     # Connection_Client(GPORT+(self.port-1)%2, self.process.id, junk).run()
-                #     running = 0
+                elif s == sys.stdin:
+                    # handle standard input
+                    junk = sys.stdin.readline()
+                    print "Shutting down server %d ..."%(self.port%20000)
+                    running = 0
 
         # close all threads
         self.server.close()
@@ -134,8 +133,8 @@ class Client(threading.Thread):
                     # print data, ':', self.port
                     process_lock.acquire()
                     to_return = self.process.process_command(data, self.port)
-                    # if to_return != None:
-                    #     self.client.send(to_return)
+                    if to_return != None:
+                        self.client.send(to_return)
                     process_lock.release()
 
                     if check_port(self.port):
@@ -232,22 +231,24 @@ class Process():
 
             # Get Command
             elif c_array[0] == "get":
-                print(" ".join(c_array))
                 try:
                     to_return = "resp " + str(self.songs[c_array[1]])
                 except:
-                    to_return = "NONE"
+                    to_return = "resp NONE"
                 return to_return
 
             # 3PC commands:
             elif c_array[0] == "add"  and self.coordinator == self.id:
                 self.songs[c_array[1]] = c_array[2]
+                return "ack commit"
             elif c_array[0] == "delete" and self.coordinator == self.id:
                 self.songs = {key: value for key, value in self.songs.items() if key != c_array[1]}
+                return "ack commit"
         else:
             print 'Process ', port, ' wants your attention'
             print c_array[0]
-        return command
+        # return 'wtf?'
+        return None
 
     def crash(self):
         subprocess.Popen(['./kill_script', str(self.m_port)], stdout=open('/dev/null'), stderr=open('/dev/null'))
@@ -259,7 +260,7 @@ class Process():
         if self.coordinator == self.id:
             print "I AM THE COORDINATOR"
             self.coordinator = self.id
-            self.m_client.send("coordinator "+str(self.id))
+            self.m_client.client.send("coordinator " + str(self.id))
             for p_id in self.up_set:
                 if p_id != self.id:
                     try:

@@ -16,12 +16,13 @@ s.connect((host,port))
 sys.stdout.write('%')
 
 while 1:
+    data = s.recv(size)
+    if data:
+        sys.stdout.write(data)
+        sys.stdout.write('\n%')
     # read from keyboard
     line = sys.stdin.readline()
     if line == '\n':
         break
     s.send(line.replace('\n', ''))
-    data = s.recv(size)
-    sys.stdout.write(data)
-    sys.stdout.write('\n%')
 s.close()
