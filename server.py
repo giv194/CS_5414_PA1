@@ -115,7 +115,7 @@ class Server(threading.Thread):
                 if self.process.pc_stage == 0:
                     c_t_o.reset()
                     p_t_o.reset()
-                    if not self.process.isCoordinator():
+                    if not self.process.is_coordinator():
                         if not t_o.waiting():
                             print "timeout"
                             self.process.elect_coordinator()
@@ -223,6 +223,7 @@ class Connection_Client(threading.Thread):
 class Process():
     # We should probably make this a monitor.
     def __init__(self, p_id, n, self_port, master_port):
+        self.dt_index = 0
         self.coordinator = None
         self.id = p_id
         self.n = n
@@ -247,7 +248,7 @@ class Process():
         with open("output_"+ str(self.id)+".txt", "w") as myfile:
             myfile.write("")
 
-    def isCoordinator(self):
+    def is_coordinator(self):
         return self.coordinator == self.id
 
     def process_command(self, command_string, port):
@@ -365,7 +366,7 @@ class Process():
     # 3PC methods
     def do_3pc(self, p_t_o, c_t_o):
         # check if coordinator
-        if self.isCoordinator():
+        if self.is_coordinator():
             if not c_t_o.waiting():
 
                 # VOTE REQ STAGE
@@ -422,11 +423,6 @@ class Process():
                 except:
                     self.states[self.id] = False
                     continue
-
-    def send_precommit_request(self):
-        self.pc_stage = PRE_COMMITE_STAGE
-        self.states ={}
-        message = PRE_COMMIT
 
 
     # process
