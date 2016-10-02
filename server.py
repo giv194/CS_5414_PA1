@@ -382,12 +382,12 @@ class Process():
                         should_abort = self.master_commands["vote"]
 
                     # update up_set
-                    for p_id in self.up_set:
+                    for p_id in range(self.n):
                         if p_id != self.coordinator and p_id not in self.states:
                             self.up_set.discard(p_id)
                             
                     for p_id in self.up_set:
-                        if self.states[p_id] == False:
+                        if p_id != self.coordinator and self.states[p_id] == False:
                             should_abort = True
 
                     if should_abort:
@@ -398,17 +398,23 @@ class Process():
                     else:
                         self.send_req(PRE_COMMIT, PRECOMMIT_STAGE)
                         c_t_o.reset()
+                    return
 
                 # coordinator PRE COMMIT STAGE
                 if self.pc_stage == PRECOMMIT_STAGE:
-                    self.log("PRECOMMIT_STAGE")
+                    for p_id in range(self.n):
+                        if p_id != self.coordinator and p_id not in self.states:
+                            self.up_set.discard(p_id)
+                            print "DISCART FROM PRECOMMIT_STAGE", p_id
+                    self.log(PRECOMMIT_STAGE)
                     # log precommit state?
                     self.send_req(COMMIT, COMMIT_STAGE)
                     c_t_o.reset()
+                    return
 
                 # coordinator COMMIT STAGE
                 if self.pc_stage == COMMIT_STAGE:
-                    self.log("COMMIT_STAGE")
+                    self.log(COMMIT_STAGE)
                     self.commit(self.master_commands["commit"])
                     self.pc_stage = 0
         else:
@@ -474,7 +480,6 @@ class Process():
         elif self.pc_stage == COMMIT_STAGE and self.master_commands['crashPartialCommit'] != False:
             pids = self.master_commands['crashPartialCommit']
             should_crash_after_send = True
-
 
         for p_id in pids:
             if p_id != self.id:
