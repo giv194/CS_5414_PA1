@@ -238,12 +238,6 @@ class Process():
 
         #Test cases:
         self.master_commands= copy.deepcopy(BASE_STATE)
-        # self.vote_no = False
-        # self.vote_crash = False
-        # self.ack_crash = False
-        # self.vote_req_crash = []
-        # self.precom_crash = []
-        # self.com_crash = []
 
         with open("output_"+ str(self.id)+".txt", "w") as myfile:
             myfile.write("")
@@ -296,13 +290,13 @@ class Process():
                 self.master_commands["commit"] = command_string
                 print c_array
                 self.send_req(VOTE_REQ, VOTE_STAGE, command_string)
-                return "ack commit"
+                return None
             elif command == "delete" and self.coordinator == self.id:
                 # self.songs = {key: value for key, value in self.songs.items() if key != c_array[1]}
                 self.master_commands["commit"] = command_string
                 print c_array[1:]
                 self.send_req(VOTE_REQ, VOTE_STAGE, command_string)
-                return "ack commit"
+                return None
         else:
             # commands from process to coordinator
             if VOTE_YES in c_array[0]:
@@ -347,8 +341,7 @@ class Process():
                     Connection_Client(GPORT+ p_id, self.id, SHOULD_ABORT).run()
                 except:
                     continue
-        if self.m_client:
-            self.m_client.client.send("ack abort")
+        self.abort()
 
     def elect_coordinator(self):
         if self.coordinator == None:
@@ -369,7 +362,7 @@ class Process():
         if self.is_coordinator():
             if not c_t_o.waiting():
 
-                # VOTE REQ STAGE
+                # coordinator VOTE REQ STAGE
                 if self.pc_stage == VOTE_STAGE:
                     should_abort = False
                     if "vote" in self.master_commands:
@@ -386,12 +379,13 @@ class Process():
                         self.send_req(PRE_COMMIT, PRECOMMIT_STAGE)
                         c_t_o.reset()
 
-                # PRE COMMIT STAGE
+                # coordinator PRE COMMIT STAGE
                 if self.pc_stage == PRECOMMIT_STAGE:
                     # log precommit state?
                     self.send_req(COMMIT, COMMIT_STAGE)
+                    c_t_o.reset()
 
-                # COMMIT STAGE
+                # coordinator COMMIT STAGE
                 if self.pc_stage == COMMIT_STAGE:
                     self.commit(self.master_commands["commit"])
                     self.pc_stage = 0
@@ -402,12 +396,24 @@ class Process():
         #         pwait
 
     def commit(self,request):
+        print "I AM COMMITTING"
         c_array = request.split(" ")
         print c_array
         if c_array[0] == "add":
             self.songs[c_array[1]] = c_array[2]
         else:
             if c_array[1] in self.songs: del self.songs[c_array[1]]
+        if self.is_coordinator():
+            if self.m_client:
+                self.m_client.client.send("ack commit")
+        self.master_commands= copy.deepcopy(BASE_STATE)
+
+    def abort(self):
+        print "I AM ABORTING"
+        if self.is_coordinator():
+            if self.m_client:
+                self.m_client.client.send("ack abort")
+        self.master_commands= copy.deepcopy(BASE_STATE)
 
     # coordinator
     def send_req(self, message, stage, request=""):
