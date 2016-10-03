@@ -123,7 +123,7 @@ class Server(threading.Thread):
         t_o = TimeOut()
         hb_t_0 = TimeOut(HB_TIMEOUT)
         c_t_o = TimeOut(HB_TIMEOUT)
-        p_t_o = TimeOut()
+        p_t_o = TimeOut(0.3 * TIMEOUT)
         with open("output_"+str(self.process.id) +".txt", "a+") as myfile:
             myfile.write("running "+str(self.port)+"\n" )
         while running:
@@ -249,7 +249,7 @@ class Process():
         self.states = {}
 
         #Test cases:
-        self.master_commands= copy.deepcopy(BASE_STATE)
+        self.master_commands = copy.deepcopy(BASE_STATE)
 
         with open("output_"+ str(self.id)+".txt", "w") as myfile:
             myfile.write("")
@@ -337,6 +337,9 @@ class Process():
                 self.up_set.add(data["id"])
                 Connection_Client(GPORT + data["id"], self.id, message).run()
 
+            if "STATE_RETURN" in c_array[0]:
+                print "STATE_RETURN:", c_array
+
             # commands from coordinator to process
             if VOTE_REQ in c_array[0]:
                  self.recieve_request(command_string)
@@ -352,23 +355,30 @@ class Process():
                 print c_array
                 self.recieve_request(command_string)
 
-            if HEARTBEAT in c_array[0]:
+            elif HEARTBEAT in c_array[0]:
                 p_id = int(c_array[1].split("=")[1])
                 print 'Process ', p_id, ' wants your attention'
                 if p_id != self.coordinator:
                     print "SETTING COORDINATOR ", p_id
                     # with open("output_"+str(self.process.id) +".txt", "a+") as myfile:
                     #     myfile.write("Setting new coordinator "+str(p_id)+"\n" )
-                    self.coordinator = p_id
 
                     log_data = self.read_log()
                     if log_data != None:
                         self.dt_index = log_data["dt_index"]
+                        if (self.coordinator == None):
+                            #pickup tables from the log
+                            self.songs = ast.literal_eval(log_data["db"])
+
+                    self.coordinator = p_id
                     if self.dt_index < int(c_array[0].split("_")[1]):
                         print "My dt_ind", self.dt_index, ":", c_array[0].split("_")[1]
                         print "GETTING TABLES"
                         self.recieve_request(GET_TABLES)
-                
+            
+            elif "STATE_REQ" in c_array[0]:
+                print "STATE_REQ recieved!"
+                self.recieve_request(command_string) 
         # return 'wtf?'
         # return "ack abort"
         return None
@@ -451,11 +461,31 @@ class Process():
         else:
             # NOT the coordinator
             if not p_t_o.waiting():
+                print "WE TIMED OUT ON", self.pc_stage
                 if self.prev_stage == self.pc_stage:
-                    do_stuff = 0
+                    self.termination()
                 else:
+                    self.prev_stage = self.pc_stage
                     p_t_o.reset()
 
+
+    def termination(self):
+        print "WE ARE IN TERMINATION:"
+        self.up_set.discard(self.coordinator)
+        self.elect_coordinator()
+        if self.coordinator == self.id:
+            for p_id in self.up_set:
+                if p_id != self.id:
+                    try:
+                        Connection_Client(GPORT+p_id, self.id, HEARTBEAT + "_0").run()
+                    except:
+                        donothing = 0
+            for p_id in self.up_set:
+                if p_id != self.id:
+                    try:
+                        Connection_Client(GPORT+p_id, self.id, "STATE_REQ " + str(self.dt_index)).run()
+                    except:
+                        donothing = 0
 
 
     def commit(self,request):
@@ -571,6 +601,10 @@ class Process():
             print "SETTING TABLES", data
             self.songs = ast.literal_eval(data["message"].replace(" ", ""))
             print self.songs
+
+        elif data["command"] == "STATE_REQ":
+            print "Responding with the state"
+            message = "STATE_RETURN " + str(self.master_commands) + "_" + str(self.pc_stage)
 
         try:
             Connection_Client(GPORT + self.coordinator, self.id, message).run()
