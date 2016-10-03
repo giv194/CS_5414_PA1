@@ -1,2 +1,4 @@
 output_*.txt
 DT*.txt
+test_output/*
+.DS_Store

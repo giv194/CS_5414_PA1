@@ -29,7 +29,7 @@ BASE_STATE = {
 }
 
 # Timeout value
-TIMEOUT = 2.5
+TIMEOUT = 1
 HB_TIMEOUT = 0.2*TIMEOUT
 
 GPORT = 20000
@@ -87,7 +87,7 @@ class Server(threading.Thread):
     def __init__(self, port, process):
         threading.Thread.__init__(self)
         self.process = process
-        self.host = ''
+        self.host = 'localhost'
         self.port = port
         self.backlog = 5
         self.size = 1024
@@ -100,10 +100,15 @@ class Server(threading.Thread):
             self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             self.server.bind((self.host,self.port))
             self.server.listen(5)
+            with open("output_"+str(self.process.id) +".txt", "a+") as myfile:
+                myfile.write("attempting to open socket "+str(self.port)+"\n" )
+
         except socket.error, (value,message):
             if self.server:
                 self.server.close()
             print "Could not open server socket: " + message
+            with open("output_"+str(self.process.id) +".txt", "a+") as myfile:
+                myfile.write("error to open socket "+str(self.port)+"\n" )
             sys.exit(1)
 
 
@@ -115,6 +120,8 @@ class Server(threading.Thread):
         hb_t_0 = TimeOut(HB_TIMEOUT)
         c_t_o = TimeOut(HB_TIMEOUT)
         p_t_o = TimeOut()
+        with open("output_"+str(self.process.id) +".txt", "a+") as myfile:
+            myfile.write("running "+str(self.port)+"\n" )
         while running:
             if check_port(self.port):
                 if self.process.pc_stage == 0:
@@ -335,9 +342,9 @@ class Process():
             elif COMMIT in c_array[0]:
                 self.recieve_request(command_string)
 
-            if HEARTBEAT not in c_array[0]:
-                print 'Process ', port, ' wants your attention'
-                print command_string
+            # if HEARTBEAT not in c_array[0]:
+            #     print 'Process ', port, ' wants your attention'
+            #     print command_string
         # return 'wtf?'
         # return "ack abort"
         return None
@@ -376,7 +383,7 @@ class Process():
                 if self.pc_stage == VOTE_STAGE:
                     # increase dt_index for a participant
 
-                    self.log("VOTE_STAGE")
+                    self.log(VOTE_REQ)
                     should_abort = False
                     if "vote" in self.master_commands:
                         should_abort = self.master_commands["vote"]
@@ -406,7 +413,7 @@ class Process():
                         if p_id != self.coordinator and p_id not in self.states:
                             self.up_set.discard(p_id)
                             print "DISCART FROM PRECOMMIT_STAGE", p_id
-                    self.log(PRECOMMIT_STAGE)
+                    self.log(PRE_COMMIT)
                     # log precommit state?
                     self.send_req(COMMIT, COMMIT_STAGE)
                     c_t_o.reset()
@@ -414,7 +421,7 @@ class Process():
 
                 # coordinator COMMIT STAGE
                 if self.pc_stage == COMMIT_STAGE:
-                    self.log(COMMIT_STAGE)
+                    self.log(COMMIT)
                     self.commit(self.master_commands["commit"])
                     self.pc_stage = 0
         else:
