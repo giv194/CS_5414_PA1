@@ -57,6 +57,8 @@ VOTE_STAGE = 1
 PRECOMMIT_STAGE = 2
 COMMIT_STAGE = 3
 
+TERMINATION = False
+
 def check_port(port):
     return port >= GPORT and port < (GPORT+10000)
 
@@ -339,6 +341,9 @@ class Process():
 
             if "STATE_RETURN" in c_array[0]:
                 print "STATE_RETURN:", c_array
+                TERMINATION = false;
+                print ast.literal_eval(c_array[1])
+                #set appropriate flags for commit/abort
 
             # commands from coordinator to process
             if VOTE_REQ in c_array[0]:
@@ -411,7 +416,7 @@ class Process():
     # 3PC methods
     def do_3pc(self, p_t_o, c_t_o):
         # check if coordinator
-        if self.is_coordinator():
+        if self.is_coordinator() and not TERMINATION:
             if not c_t_o.waiting():
                 # coordinator VOTE REQ STAGE
                 if self.pc_stage == VOTE_STAGE:
@@ -466,13 +471,13 @@ class Process():
                     self.termination()
                 else:
                     self.prev_stage = self.pc_stage
-                    p_t_o.reset()
+                p_t_o.reset()
 
 
     def termination(self):
         print "WE ARE IN TERMINATION:"
-        self.up_set.discard(self.coordinator)
-        self.elect_coordinator()
+        if not TERMINATION
+            self.up_set.discard(self.coordinator)
         if self.coordinator == self.id:
             for p_id in self.up_set:
                 if p_id != self.id:
@@ -486,6 +491,7 @@ class Process():
                         Connection_Client(GPORT+p_id, self.id, "STATE_REQ " + str(self.dt_index)).run()
                     except:
                         donothing = 0
+        TERMINATION = True
 
 
     def commit(self,request):
@@ -604,7 +610,7 @@ class Process():
 
         elif data["command"] == "STATE_REQ":
             print "Responding with the state"
-            message = "STATE_RETURN " + str(self.master_commands) + "_" + str(self.pc_stage)
+            message = "STATE_RETURN " + str(self.master_commands).replace(" ", "") + " " + str(self.pc_stage)
 
         try:
             Connection_Client(GPORT + self.coordinator, self.id, message).run()
