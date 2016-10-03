@@ -75,19 +75,21 @@ def send(index, data, set_wait_ack=False):
     while wait:
         time.sleep(0.01)
         wait = wait_ack
-    if set_wait_ack:
-        wait_ack = True
     pid = int(index)
     if pid >= 0:
         if pid not in threads:
             print 'Master or testcase error!'
             return
+        if set_wait_ack:
+            wait_ack = True
         threads[pid].send(data)
         return
     pid = leader
     while pid not in live_list or live_list[pid] == False:
         time.sleep(0.01)
         pid = leader
+    if set_wait_ack:
+        wait_ack = True
     threads[pid].send(data)
 
 def exit():
@@ -98,9 +100,10 @@ def exit():
         time.sleep(0.01)
         wait = wait_ack
 
+    time.sleep(2)
     for k in threads:
         threads[k].close()
-    #subprocess.Popen(['./stopall'], stdout=open('/dev/null'), stderr=open('/dev/null'))
+    subprocess.Popen(['./stopall'], stdout=open('/dev/null'), stderr=open('/dev/null'))
     time.sleep(0.1)
     os._exit(0)
 
@@ -129,14 +132,18 @@ def main():
             if leader == -1:
                 leader = pid
             live_list[pid] = True
+            print time.time()
             subprocess.Popen(['./process', str(pid), sp2[2], sp2[3]], stdout=open('/dev/null'), stderr=open('/dev/null'))
             # sleep for a while to allow the process be ready
-            time.sleep(0.5)
+            time.sleep(1)
             # connect to the port of the pid
+            print time.time()
             handler = ClientHandler(pid, address, port)
             threads[pid] = handler
             handler.start()
-        elif cmd == 'add' or cmd == 'delete' or cmd == 'get':
+        elif cmd == 'get':
+            send(pid, sp1[1], set_wait_ack=True)
+        elif cmd == 'add' or cmd == 'delete':
             send(pid, sp1[1], set_wait_ack=True)
             for c in crash_later:
                 live_list[c] = False
@@ -153,7 +160,7 @@ def main():
             crash_later.append(pid)
         elif cmd == 'vote':
             send(pid, sp1[1])
-        time.sleep(0.1)
+        time.sleep(1)
 
 if __name__ == '__main__':
     main()
