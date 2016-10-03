@@ -15,6 +15,7 @@ import copy
 import json
 from socket import error as SocketError
 import errno
+import ast
 
 process_lock = threading.Lock()
 thread_list = []
@@ -48,6 +49,9 @@ PRE_COMMIT_ACK = "PRE_COMMIT_ACK3"
 COMMIT = "COMMIT3"
 STABLE = "STABLE"
 ABORT = "ABORT"
+GET_TABLES = "GET_TABLES"
+SET_TABLES = "SET_TABLES"
+
 # 3PC stages
 VOTE_STAGE = 1
 PRECOMMIT_STAGE = 2
@@ -137,7 +141,7 @@ class Server(threading.Thread):
                             for p_id in range(0,self.process.n):
                                 if p_id != self.process.id:
                                     try:
-                                        Connection_Client(GPORT+p_id, self.process.id, HEARTBEAT).run()
+                                        Connection_Client(GPORT+p_id, self.process.id, HEARTBEAT + "_" +str(self.process.dt_index)).run()
                                     except:
                                         donothing = 0
                             hb_t_0.reset()
@@ -197,14 +201,7 @@ class Client(threading.Thread):
                     process_lock.release()
 
                     if check_port(self.port):
-                        split = data.split(" ")
-                        if split[0] == HEARTBEAT:
-                            p_id = int([s for s in split if "id=" in s][0].split("=")[1])
-                            if p_id != self.process.coordinator:
-                                print "SETTING COORDINATOR ", p_id
-                                with open("output_"+str(self.process.id) +".txt", "a+") as myfile:
-                                    myfile.write("Setting new coordinator "+str(p_id)+"\n" )
-                            self.process.coordinator = p_id
+                        if HEARTBEAT in data:
                             self.server_t_o.reset()
                 else:
                     self.client.close()
@@ -332,6 +329,14 @@ class Process():
                 data = parse_process_message(command_string)
                 self.states[data["id"]] = True
 
+            if GET_TABLES in c_array[0]:
+                data = parse_process_message(command_string)
+                print "GET_TABLES: ", data
+                message = "SET_TABLES " + str(self.songs)
+                #update up_set:
+                self.up_set.add(data["id"])
+                Connection_Client(GPORT + data["id"], self.id, message).run()
+
             # commands from coordinator to process
             if VOTE_REQ in c_array[0]:
                  self.recieve_request(command_string)
@@ -342,9 +347,28 @@ class Process():
             elif COMMIT in c_array[0]:
                 self.recieve_request(command_string)
 
-            # if HEARTBEAT not in c_array[0]:
-            #     print 'Process ', port, ' wants your attention'
-            #     print command_string
+            elif SET_TABLES in c_array[0]:
+                print "TABLES FROM MASTER:"
+                print c_array
+                self.recieve_request(command_string)
+
+            if HEARTBEAT in c_array[0]:
+                p_id = int(c_array[1].split("=")[1])
+                print 'Process ', p_id, ' wants your attention'
+                if p_id != self.coordinator:
+                    print "SETTING COORDINATOR ", p_id
+                    # with open("output_"+str(self.process.id) +".txt", "a+") as myfile:
+                    #     myfile.write("Setting new coordinator "+str(p_id)+"\n" )
+                    self.coordinator = p_id
+
+                    log_data = self.read_log()
+                    if log_data != None:
+                        self.dt_index = log_data["dt_index"]
+                    if self.dt_index < int(c_array[0].split("_")[1]):
+                        print "My dt_ind", self.dt_index, ":", c_array[0].split("_")[1]
+                        print "GETTING TABLES"
+                        self.recieve_request(GET_TABLES)
+                
         # return 'wtf?'
         # return "ack abort"
         return None
@@ -539,8 +563,17 @@ class Process():
             # no need to send message since it's commit, so we return
             return
 
+        elif data["command"] == GET_TABLES:
+            print "WE ARE READY TO ASK FOR TABLES"
+            message = GET_TABLES
+
+        elif data["command"] == SET_TABLES:
+            print "SETTING TABLES", data
+            self.songs = ast.literal_eval(data["message"].replace(" ", ""))
+            print self.songs
+
         try:
-            Connection_Client(GPORT+ self.coordinator, self.id, message).run()
+            Connection_Client(GPORT + self.coordinator, self.id, message).run()
         except:
             donothing
 
@@ -548,9 +581,17 @@ class Process():
             self.crash()
 
     def log(self, message):
-        with open("DTLog_" + str(self.id) + ".txt", "a") as f:
+        with open("DTLog_" + str(self.id) + ".txt", "w") as f:
             f.write(json.dumps({"dt_index": self.dt_index,"coordinator": self.coordinator, "message": message, "stage": self.pc_stage, "db": str(self.songs), "up_set": str([x for x in self.up_set])}))
-            f.write("\n")
+
+    def read_log(self):
+        data = None
+        try:
+            with open('DTLog_' + str(self.id) + ".txt") as data_file:    
+                data = json.load(data_file)
+            return data
+        except:
+            return data
 
 
 if __name__ == "__main__":
