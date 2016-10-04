@@ -15,6 +15,7 @@ import copy
 import json
 from socket import error as SocketError
 import errno
+import ast
 
 process_lock = threading.Lock()
 thread_list = []
@@ -48,6 +49,9 @@ PRE_COMMIT_ACK = "PRE_COMMIT_ACK3"
 COMMIT = "COMMIT3"
 STABLE = "STABLE"
 ABORT = "ABORT"
+GET_TABLES = "GET_TABLES"
+SET_TABLES = "SET_TABLES"
+
 # 3PC stages
 VOTE_STAGE = 1
 PRECOMMIT_STAGE = 2
@@ -119,7 +123,7 @@ class Server(threading.Thread):
         t_o = TimeOut()
         hb_t_0 = TimeOut(HB_TIMEOUT)
         c_t_o = TimeOut(HB_TIMEOUT)
-        p_t_o = TimeOut()
+        p_t_o = TimeOut(TIMEOUT)
         with open("output_"+str(self.process.id) +".txt", "a+") as myfile:
             myfile.write("running "+str(self.port)+"\n" )
         while running:
@@ -139,7 +143,7 @@ class Server(threading.Thread):
                             for p_id in range(0,self.process.n):
                                 if p_id != self.process.id:
                                     try:
-                                        Connection_Client(GPORT+p_id, self.process.id, HEARTBEAT).run()
+                                        Connection_Client(GPORT+p_id, self.process.id, HEARTBEAT + "_" +str(self.process.dt_index)).run()
                                     except:
                                         donothing = 0
                             hb_t_0.reset()
@@ -201,14 +205,7 @@ class Client(threading.Thread):
                     process_lock.release()
 
                     if check_port(self.port):
-                        split = data.split(" ")
-                        if split[0] == HEARTBEAT:
-                            p_id = int([s for s in split if "id=" in s][0].split("=")[1])
-                            if p_id != self.process.coordinator:
-                                print "SETTING COORDINATOR ", p_id
-                                with open("output_"+str(self.process.id) +".txt", "a+") as myfile:
-                                    myfile.write("Setting new coordinator "+str(p_id)+"\n" )
-                            self.process.coordinator = p_id
+                        if HEARTBEAT in data:
                             self.server_t_o.reset()
                 else:
                     self.client.close()
@@ -256,7 +253,7 @@ class Process():
         self.states = {}
 
         #Test cases:
-        self.master_commands= copy.deepcopy(BASE_STATE)
+        self.master_commands = copy.deepcopy(BASE_STATE)
 
         with open("output_"+ str(self.id)+".txt", "w") as myfile:
             myfile.write("")
@@ -336,6 +333,46 @@ class Process():
                 data = parse_process_message(command_string)
                 self.states[data["id"]] = True
 
+            if GET_TABLES in c_array[0]:
+                data = parse_process_message(command_string)
+                print "GET_TABLES: ", data
+                message = "SET_TABLES " + str(self.songs)
+                #update up_set:
+                self.up_set.add(data["id"])
+                Connection_Client(GPORT + data["id"], self.id, message).run()
+
+            if "STATE_RETURN" in c_array[0]:
+                print "STATE_RETURN:", c_array
+                state = ast.literal_eval(c_array[1])
+                stage = int(c_array[2])
+                dt_index = int(c_array[3])
+                p_id = int(c_array[4].split("=")[1])
+
+                self.states[p_id] = True
+                print "MY PREV STAGE", self.prev_stage
+
+                if dt_index < self.dt_index:
+                    # ABORT:
+                    print "TR1 TIMEOUT ABORT"
+                    self.prev_stage = 0
+                    self.send_abort()
+
+                if state["vote"] == True:
+                    # ABORT:
+                    print "TR1 VOTE NO ABORT"
+                    self.prev_stage = 0
+                    self.send_abort()
+
+                if stage == 2 and self.pc_stage != 2:
+                    # PRECOMMIT TR4
+                    print "PRECOMMIT TR4"
+                    self.pc_stage = 1
+
+                if stage == 3:
+                    # COMMIT TR2
+                    print "PRECOMMIT TR2"
+                    self.pc_stage = 2
+
             # commands from coordinator to process
             if VOTE_REQ in c_array[0]:
                  self.recieve_request(command_string)
@@ -346,9 +383,34 @@ class Process():
             elif COMMIT in c_array[0]:
                 self.recieve_request(command_string)
 
-            # if HEARTBEAT not in c_array[0]:
-            #     print 'Process ', port, ' wants your attention'
-            #     print command_string
+            elif SET_TABLES in c_array[0]:
+                print "TABLES FROM MASTER:"
+                print c_array
+                self.recieve_request(command_string)
+
+            elif HEARTBEAT in c_array[0]:
+                p_id = int(c_array[1].split("=")[1])
+                print 'Process ', p_id, ' wants your attention'
+                if p_id != self.coordinator:
+                    print "SETTING COORDINATOR ", p_id
+                    # with open("output_"+str(self.process.id) +".txt", "a+") as myfile:
+                    #     myfile.write("Setting new coordinator "+str(p_id)+"\n" )
+
+                    log_data = self.read_log()
+                    if log_data != None:
+                        self.dt_index = log_data["dt_index"]
+                        if (self.coordinator == None):
+                            #pickup tables from the log
+                            self.songs = ast.literal_eval(log_data["db"])
+                    self.coordinator = p_id
+                    if self.dt_index < int(c_array[0].split("_")[1]) or self.pc_stage != 0 or (log_data != None and p_id not in log_data["up_set"]):
+                        print "My dt_ind", self.dt_index, ":", c_array[0].split("_")[1]
+                        print "GETTING TABLES"
+                        self.recieve_request(GET_TABLES)
+            
+            elif "STATE_REQ" in c_array[0]:
+                print "STATE_REQ recieved!"
+                self.recieve_request(command_string) 
         # return 'wtf?'
         # return "ack abort"
         return None
@@ -377,10 +439,13 @@ class Process():
                 myfile.write("I AM THE COORDINATOR "+str(self.id)+"\n" )
             if self.m_client:
                 self.m_client.client.send("coordinator " + str(self.id) + "\n")
+            if self.pc_stage == -1:
+                self.termination()
 
     # 3PC methods
     def do_3pc(self, p_t_o, c_t_o):
         # check if coordinator
+        # print "PREVIOUS STAGE", self.prev_stage
         if self.is_coordinator():
             if not c_t_o.waiting():
                 # coordinator VOTE REQ STAGE
@@ -401,10 +466,13 @@ class Process():
                         if p_id != self.coordinator and self.states[p_id] == False:
                             should_abort = True
 
+                    if self.pc_stage == 1 and self.prev_stage == 1:
+                        should_abort = True
+
                     if should_abort:
                         print("aborted!")
-                        self.send_abort()
                         self.pc_stage = 0
+                        self.send_abort()
 
                     else:
                         self.send_req(PRE_COMMIT, PRECOMMIT_STAGE)
@@ -428,14 +496,55 @@ class Process():
                     self.log(COMMIT)
                     self.commit(self.master_commands["commit"])
                     self.pc_stage = 0
+
+                if self.pc_stage == -1:
+                    print "WAITING FOR STAGES"
+                    temp = self.prev_stage
+                    self.pc_stage = self.prev_stage
+                    self.prev_stage = temp
+                    print "NEXT STAGE WILL BE", self.pc_stage
+                    c_t_o.reset()
+                    return
+
         else:
             # NOT the coordinator
             if not p_t_o.waiting():
                 if self.prev_stage == self.pc_stage:
-                    do_stuff = 0
+                    print "WE TIMED OUT ON", self.pc_stage
+                    self.termination()
                 else:
-                    p_t_o.reset()
+                    self.prev_stage = self.pc_stage
+                p_t_o.reset()
 
+
+    def termination(self):
+        print "WE ARE IN TERMINATION:"
+        if not self.is_coordinator():
+            self.up_set.discard(self.coordinator)
+            self.elect_coordinator()
+            if self.coordinator == self.id:
+                for p_id in self.up_set:
+                    if p_id != self.id:
+                        try:
+                            Connection_Client(GPORT+p_id, self.id, HEARTBEAT + "_0").run()
+                        except:
+                            donothing = 0
+                print "SENDING STATE REQUEST"
+                for p_id in self.up_set:
+                    if p_id != self.id:
+                        try:
+                            Connection_Client(GPORT+p_id, self.id, "STATE_REQ " + str(self.dt_index)).run()
+                        except:
+                            donothing = 0
+            self.pc_stage = -1
+        else:
+            print "SENDING STATE REQUEST"
+            for p_id in self.up_set:
+                if p_id != self.id:
+                    try:
+                        Connection_Client(GPORT+p_id, self.id, "STATE_REQ " + str(self.dt_index)).run()
+                    except:
+                        donothing = 0
 
 
     def commit(self,request):
@@ -460,6 +569,7 @@ class Process():
                     Connection_Client(GPORT+ p_id, self.id, SHOULD_ABORT).run()
                 except:
                     continue
+        print "I'm ABORTING"
         self.abort()
 
     def abort(self):
@@ -480,6 +590,7 @@ class Process():
         should_crash_after_send = False
 
         print "doing send request ",stage," and message ", message
+        print pids
         if self.pc_stage == VOTE_STAGE and self.master_commands['crashVoteREQ'] != False:
             pids = self.master_commands['crashVoteREQ']
             should_crash_after_send = True
@@ -507,15 +618,22 @@ class Process():
     # process
     def recieve_request(self, request):
         data = parse_process_message(request)
+        print "PROCESS DATA", data
         message = ""
         should_crash_after_send = False
 
-        if data["command"] == VOTE_REQ:
+        if data["command"] == SHOULD_ABORT:
+            message = SHOULD_ABORT
+            self.pc_stage = 0
+            self.log(message)
+            self.abort()
+
+        elif data["command"] == VOTE_REQ:
             self.dt_index += 1
             self.master_commands["commit"] = data["message"].strip()
             message = VOTE_YES
+            self.pc_stage = VOTE_STAGE
             self.log(message)
-            self.pc_stage = PRECOMMIT_STAGE
             print self.master_commands
             #Abort:
             if self.master_commands["vote"] == True:
@@ -529,13 +647,14 @@ class Process():
 
         elif data["command"] == PRE_COMMIT:
             message = PRE_COMMIT_ACK
+            self.pc_stage = PRECOMMIT_STAGE
             self.log(message)
-            self.pc_stage = COMMIT_STAGE
             if self.master_commands["crashAfterAck"]:
                 should_crash_after_send = True
 
         elif data["command"] == COMMIT:
             message = COMMIT
+            self.pc_stage = COMMIT_STAGE
             self.log(COMMIT)
             self.commit(self.master_commands["commit"])
             self.pc_stage = 0
@@ -543,8 +662,24 @@ class Process():
             # no need to send message since it's commit, so we return
             return
 
+        elif data["command"] == GET_TABLES:
+            print "WE ARE READY TO ASK FOR TABLES"
+            message = GET_TABLES
+
+        elif data["command"] == SET_TABLES:
+            print "SETTING TABLES", data
+            self.songs = ast.literal_eval(data["message"].replace(" ", ""))
+            self.pc_stage = 0
+            self.log(STABLE)
+            print self.songs
+
+        elif data["command"] == "STATE_REQ":
+            print "Responding with the state"
+            message = "STATE_RETURN " + str(self.master_commands).replace(" ", "") + " " + str(self.prev_stage) + " " + str(self.dt_index)
+            self.pc_stage = 0
+
         try:
-            Connection_Client(GPORT+ self.coordinator, self.id, message).run()
+            Connection_Client(GPORT + self.coordinator, self.id, message).run()
         except:
             donothing
 
@@ -552,9 +687,17 @@ class Process():
             self.crash()
 
     def log(self, message):
-        with open("DTLog_" + str(self.id) + ".txt", "a") as f:
-            f.write(json.dumps({"dt_index": self.dt_index,"coordinator": self.coordinator, "message": message, "stage": self.pc_stage, "db": str(self.songs), "up_set": str([x for x in self.up_set])}))
-            f.write("\n")
+        with open("DTLog_" + str(self.id) + ".txt", "w") as f:
+            f.write(json.dumps({"dt_index": self.dt_index,"coordinator": self.coordinator, "message": message, "stage": self.pc_stage, "db": str(self.songs), "up_set": [x for x in self.up_set]}))
+
+    def read_log(self):
+        data = None
+        try:
+            with open('DTLog_' + str(self.id) + ".txt") as data_file:    
+                data = json.load(data_file)
+            return data
+        except:
+            return data
 
 
 if __name__ == "__main__":
