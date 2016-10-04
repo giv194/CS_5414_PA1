@@ -128,6 +128,8 @@ class Server(threading.Thread):
             myfile.write("running "+str(self.port)+"\n" )
         while running:
             if check_port(self.port):
+                with open("output_"+str(self.process.id) +".txt", "a+") as myfile:
+                    myfile.write("running... "+str(self.port)+"\n" )
                 if self.process.pc_stage == 0:
                     c_t_o.reset()
                     p_t_o.reset()
@@ -157,13 +159,15 @@ class Server(threading.Thread):
                     if not check_port(self.port):
                         self.process.m_client = c
 
-                elif s == sys.stdin:
+                # elif s == sys.stdin:
                     # handle standard input
-                    junk = sys.stdin.readline()
-                    print "Shutting down server %d ..."%(self.port%20000)
-                    running = 0
+                    # junk = sys.stdin.readline()
+                    # print "Shutting down server %d ..."%(self.port%20000)
+                    # running = 0
             time.sleep(0.2*HB_TIMEOUT)
 
+        with open("output_"+str(self.process.id) +".txt", "a+") as myfile:
+            myfile.write("wut? closing? "+str(self.port)+"\n" )
         # close all threads
         self.server.close()
         for c in self.threads:
