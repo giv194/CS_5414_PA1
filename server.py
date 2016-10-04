@@ -143,6 +143,7 @@ class Server(threading.Thread):
                                 print "RESTORING DATA!"
                                 self.process.songs = ast.literal_eval(log_data["db"])
                                 self.process.dt_index = log_data["dt_index"]
+                                self.process.up_set = set([x for x in log_data["up_set"]])
                                 if len(log_data["up_set"]) == 1 or self.process.coordinator != None:
                                     self.process.elect_coordinator()
                                 else:
@@ -164,6 +165,7 @@ class Server(threading.Thread):
                                 if p_id != self.process.id:
                                     try:
                                         Connection_Client(GPORT+p_id, self.process.id, HEARTBEAT + "_" +str(self.process.dt_index)).run()
+                                        self.process.m_client.client.send("coordinator " + str(self.process.id) + "\n")
                                     except:
                                         donothing = 0
                             hb_t_0.reset()
@@ -345,6 +347,22 @@ class Process():
                     self.dt_index += 1
                     self.send_req(VOTE_REQ, VOTE_STAGE, command_string.replace("COMMAND ", ""))
                     return None
+
+            if "COMMAND" in c_array:
+                split = command_string.split(" COMMAND")
+                ids = []
+                for each in split:
+                    if "id=" in each:
+                        print each.split("=")[1]
+                        ids.append(int(each.split("=")[1]))
+                print "UP NODES: ", ids
+                for up in self.up_set:
+                    if up not in ids and up != self.id:
+                        print "NODEs ARE NOT UP: ", up
+                        return None
+                print "ALL NODES ARE UP"
+                self.elect_coordinator()
+
         else:
             # commands from process to coordinator
             if VOTE_YES in c_array[0]:
