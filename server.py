@@ -31,7 +31,7 @@ BASE_STATE = {
 }
 
 # Timeout value
-TIMEOUT = 5
+TIMEOUT = 1
 HB_TIMEOUT = 0.2*TIMEOUT
 
 GPORT = 20000
@@ -105,15 +105,11 @@ class Server(threading.Thread):
             self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             self.server.bind((self.host,self.port))
             self.server.listen(5)
-            with open("output_"+str(self.process.id) +".txt", "a+") as myfile:
-                myfile.write("attempting to open socket "+str(self.port)+"\n" )
 
         except socket.error, (value,message):
             if self.server:
                 self.server.close()
             print "Could not open server socket: " + message
-            with open("output_"+str(self.process.id) +".txt", "a+") as myfile:
-                myfile.write("error to open socket "+str(self.port)+"\n" )
             sys.exit(1)
 
 
@@ -125,12 +121,8 @@ class Server(threading.Thread):
         hb_t_0 = TimeOut(HB_TIMEOUT)
         c_t_o = TimeOut(HB_TIMEOUT)
         p_t_o = TimeOut(TIMEOUT)
-        with open("output_"+str(self.process.id) +".txt", "a+") as myfile:
-            myfile.write("running "+str(self.port)+"\n" )
         while running:
             if check_port(self.port):
-                with open("output_"+str(self.process.id) +".txt", "a+") as myfile:
-                    myfile.write("running... "+str(self.port)+"\n" )
                 if self.process.pc_stage == 0:
                     c_t_o.reset()
                     p_t_o.reset()
@@ -152,10 +144,11 @@ class Server(threading.Thread):
                                             try:
                                                 #FINISH THE COMMAND BUFFER!!!
                                                 print "SEND COMMAND BUFFER: ", str(self.process.master_commands["commit"]) + " COMMAND"
-                                                Connection_Client(GPORT+p_id, self.process.id, str(self.process.master_commands["commit"]) + " COMMAND").run()
+                                                master_commands = self.process.master_commands["commit"].replace(" COMMAND id="+str(self.process.id), "")
+                                                Connection_Client(GPORT+p_id, self.process.id, master_commands + " COMMAND").run()
                                             except:
                                                 donothing = 0
-                                self.process.m_client.client.send("coordinator " + str(self.process.id) + "\n")
+                                # self.process.m_client.client.send("coordinator " + str(self.process.id) + "\n")
                             else:
                                 self.process.elect_coordinator()
                             t_o.reset()
@@ -190,8 +183,6 @@ class Server(threading.Thread):
                     # running = 0
             time.sleep(0.2*HB_TIMEOUT)
 
-        with open("output_"+str(self.process.id) +".txt", "a+") as myfile:
-            myfile.write("wut? closing? "+str(self.port)+"\n" )
         # close all threads
         self.server.close()
         for c in self.threads:
@@ -279,8 +270,8 @@ class Process():
         #Test cases:
         self.master_commands = copy.deepcopy(BASE_STATE)
 
-        with open("output_"+ str(self.id)+".txt", "w") as myfile:
-            myfile.write("")
+        with open("output_"+ str(self.id)+".txt", "a+") as myfile:
+            myfile.write("Back to life! \n")
 
     def is_coordinator(self):
         return self.coordinator == self.id
@@ -326,6 +317,8 @@ class Process():
                     to_return = "resp " + str(self.songs[c_array[1]])
                 except:
                     to_return = "resp NONE"
+                with open("output_"+str(self.id)+".txt", "a+") as myfile:
+                    myfile.write("Processing GET "+command_string+"; with value: "+to_return+"\n" )
                 return to_return
 
             # 3PC commands:
@@ -334,6 +327,8 @@ class Process():
                 if self.coordinator == self.id:
                     # self.songs[c_array[1]] = c_array[2]
                     print c_array
+                    with open("output_"+str(self.id)+".txt", "a+") as myfile:
+                        myfile.write("processing add "+command_string+"\n" )
                     # increase dt_index for the master
                     self.dt_index += 1
                     self.send_req(VOTE_REQ, VOTE_STAGE, command_string.replace("COMMAND ", ""))
@@ -411,7 +406,8 @@ class Process():
                 if stage == 2 and self.pc_stage != 2:
                     # PRECOMMIT TR4
                     print "PRECOMMIT TR4"
-                    self.pc_stage = 1
+                    self.prev_stage = 1
+                    self.send_req(PRE_COMMIT, PRECOMMIT_STAGE)
 
                 if stage == 3:
                     # COMMIT TR2
@@ -435,11 +431,9 @@ class Process():
 
             elif HEARTBEAT in c_array[0]:
                 p_id = int(c_array[1].split("=")[1])
-                print 'Process ', p_id, ' wants your attention'
+                # print 'Process ', p_id, ' wants your attention'
                 if p_id != self.coordinator:
                     print "SETTING COORDINATOR ", p_id
-                    # with open("output_"+str(self.process.id) +".txt", "a+") as myfile:
-                    #     myfile.write("Setting new coordinator "+str(p_id)+"\n" )
 
                     log_data = self.read_log()
                     if log_data != None:
@@ -449,14 +443,16 @@ class Process():
                             self.songs = ast.literal_eval(log_data["db"])
                     self.coordinator = p_id
                     if (self.dt_index < int(c_array[0].split("_")[1])) or self.pc_stage != 0 or (log_data != None and p_id not in log_data["up_set"]):
+                        with open("output_"+str(self.id)+".txt", "a+") as myfile:
+                            myfile.write("dt_ind "+str(self.dt_index)+"; at stage: "+str(self.pc_stage)+" with c array: "+str(c_array)+"\n" )
                         print "My dt_ind", self.dt_index, ":", c_array[0].split("_")[1]
                         print "GETTING TABLES"
                         self.dt_index = int(c_array[0].split("_")[1])
                         self.recieve_request(GET_TABLES)
-            
+
             elif "STATE_REQ" in c_array[0]:
                 print "STATE_REQ recieved!"
-                self.recieve_request(command_string) 
+                self.recieve_request(command_string)
         # return 'wtf?'
         # return "ack abort"
         return None
@@ -512,8 +508,8 @@ class Process():
                         if p_id != self.coordinator and self.states[p_id] == False:
                             should_abort = True
 
-                    if self.pc_stage == 1 and self.prev_stage == 1:
-                        should_abort = True
+                    # if self.pc_stage == 1 and self.prev_stage == 1:
+                    #     should_abort = True
 
                     if should_abort:
                         print("aborted!")
@@ -595,6 +591,8 @@ class Process():
 
     def commit(self,request):
         print "I AM COMMITTING"
+        with open("output_"+str(self.id)+".txt", "a+") as myfile:
+            myfile.write("COMMITING "+self.master_commands["commit"]+"; with request: "+request+"; at stage: "+str(self.pc_stage)+"\n" )
         c_array = request.split(" ")
         print c_array
         if c_array[0] == "add":
@@ -620,6 +618,8 @@ class Process():
 
     def abort(self):
         print "I AM ABORTING"
+        with open("output_"+str(self.id)+".txt", "a+") as myfile:
+            myfile.write("ABORTING "+self.master_commands["commit"]+"; at stage: "+str(self.pc_stage)+"\n" )
         if self.is_coordinator():
             if self.m_client:
                 self.m_client.client.send("ack abort" + "\n")
@@ -628,6 +628,8 @@ class Process():
 
     # coordinator
     def send_req(self, message, stage, request=""):
+        with open("output_"+str(self.id)+".txt", "a+") as myfile:
+            myfile.write("sending message "+message+"; at stage: "+str(stage)+"\n" )
         self.pc_stage = stage
         self.states = {}
         if len(request) > 0:
@@ -663,6 +665,8 @@ class Process():
 
     # process
     def recieve_request(self, request):
+        with open("output_"+str(self.id)+".txt", "a+") as myfile:
+            myfile.write("recieving request "+request+"; at stage: "+str(self.pc_stage)+"\n" )
         data = parse_process_message(request)
         print "PROCESS DATA", data
         message = ""
@@ -704,7 +708,7 @@ class Process():
             self.log(COMMIT)
             self.commit(self.master_commands["commit"])
             self.pc_stage = 0
-            self.prev_stage = 0
+            self.prev_stage = 3
             # no need to send message since it's commit, so we return
             return
 
@@ -739,7 +743,7 @@ class Process():
     def read_log(self):
         data = None
         try:
-            with open('DTLog_' + str(self.id) + ".txt") as data_file:    
+            with open('DTLog_' + str(self.id) + ".txt") as data_file:
                 data = json.load(data_file)
             return data
         except:
@@ -755,8 +759,3 @@ if __name__ == "__main__":
     for s in servers:
         s.start()
         thread_list.append(s)
-    # for s in servers:
-    #     s.join()
-    # while(True):
-    #     time.sleep(1)
-    #     print("awake")

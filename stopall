@@ -1,3 +1,4 @@
 #!/bin/sh
 ps aux | grep "server.py" | awk '{print $2}' | xargs kill
 rm DTLog_*.txt;
+rm output_*.txt;
