@@ -17,7 +17,6 @@ from socket import error as SocketError
 import errno
 import ast
 
-process_lock = threading.Lock()
 thread_list = []
 
 BASE_STATE = {
@@ -149,6 +148,7 @@ class Server(threading.Thread):
                                             except:
                                                 donothing = 0
                                 # self.process.m_client.client.send("coordinator " + str(self.process.id) + "\n")
+
                             else:
                                 self.process.elect_coordinator()
                             t_o.reset()
@@ -158,7 +158,7 @@ class Server(threading.Thread):
                                 if p_id != self.process.id:
                                     try:
                                         Connection_Client(GPORT+p_id, self.process.id, HEARTBEAT + "_" +str(self.process.dt_index)).run()
-                                        self.process.m_client.client.send("coordinator " + str(self.process.id) + "\n")
+                                        # self.process.m_client.client.send("coordinator " + str(self.process.id) + "\n")
                                     except:
                                         donothing = 0
                             hb_t_0.reset()
@@ -207,17 +207,18 @@ class Client(threading.Thread):
     def run(self):
         running = 1
         while running:
+            if self.port == self.process.m_port:
+                self.process.process_lock.acquire()
+                self.process.process_lock.release()
             try:
                 data = self.client.recv(self.size)
                 if data:
                     #echo server:
                     #self.client.send(data)
                     # print data, ':', self.port
-                    process_lock.acquire()
                     to_return = self.process.process_command(data, self.port)
                     if to_return != None:
                         self.client.send(str(to_return) + "\n")
-                    process_lock.release()
 
                     if check_port(self.port):
                         if HEARTBEAT in data:
@@ -267,6 +268,8 @@ class Process():
         self.prev_stage = 0
         self.states = {}
 
+        self.process_lock = threading.Lock()
+
         #Test cases:
         self.master_commands = copy.deepcopy(BASE_STATE)
 
@@ -313,16 +316,19 @@ class Process():
 
             # Get Command
             elif command == "get":
+                self.process_lock.acquire()
                 try:
                     to_return = "resp " + str(self.songs[c_array[1]])
                 except:
                     to_return = "resp NONE"
                 with open("output_"+str(self.id)+".txt", "a+") as myfile:
                     myfile.write("Processing GET "+command_string+"; with value: "+to_return+"\n" )
+                self.process_lock.release()
                 return to_return
 
             # 3PC commands:
             elif command == "add":
+                self.process_lock.acquire()
                 self.master_commands["commit"] = command_string
                 if self.coordinator == self.id:
                     # self.songs[c_array[1]] = c_array[2]
@@ -334,6 +340,7 @@ class Process():
                     self.send_req(VOTE_REQ, VOTE_STAGE, command_string.replace("COMMAND ", ""))
                     return None
             elif command == "delete":
+                self.process_lock.acquire()
                 self.master_commands["commit"] = command_string
                 if self.coordinator == self.id:
                     # self.songs = {key: value for key, value in self.songs.items() if key != c_array[1]}
@@ -411,12 +418,13 @@ class Process():
 
                 if stage == 3:
                     # COMMIT TR2
-                    print "PRECOMMIT TR2"
+                    print "COMMIT TR2"
                     self.pc_stage = 2
 
             # commands from coordinator to process
             if VOTE_REQ in c_array[0]:
-                 self.recieve_request(command_string)
+                self.process_lock.acquire()
+                self.recieve_request(command_string)
 
             elif PRE_COMMIT in c_array[0]:
                 self.recieve_request(command_string)
@@ -477,8 +485,6 @@ class Process():
         print "ELECTING NEW COORDINATOR: "+str(self.coordinator)
         if self.coordinator == self.id:
             print "I AM THE COORDINATOR"
-            with open("output_"+str(self.id)+".txt", "a+") as myfile:
-                myfile.write("I AM THE COORDINATOR "+str(self.id)+"\n" )
             if self.m_client:
                 self.m_client.client.send("coordinator " + str(self.id) + "\n")
             if self.pc_stage == -1:
@@ -509,6 +515,8 @@ class Process():
                             should_abort = True
 
                     # if self.pc_stage == 1 and self.prev_stage == 1:
+
+                    #     "IS IT IT?"
                     #     should_abort = True
 
                     if should_abort:
@@ -538,6 +546,7 @@ class Process():
                     self.log(COMMIT)
                     self.commit(self.master_commands["commit"])
                     self.pc_stage = 0
+                    self.prev_stage = 3
 
                 if self.pc_stage == -1:
                     print "WAITING FOR STAGES"
@@ -604,6 +613,7 @@ class Process():
                 self.m_client.client.send("ack commit" + "\n")
         self.log(STABLE)
         self.master_commands= copy.deepcopy(BASE_STATE)
+        self.process_lock.release()
 
 
     def send_abort(self):
@@ -625,11 +635,13 @@ class Process():
                 self.m_client.client.send("ack abort" + "\n")
         self.log(ABORT)
         self.master_commands = copy.deepcopy(BASE_STATE)
+        self.process_lock.release()
 
     # coordinator
     def send_req(self, message, stage, request=""):
         with open("output_"+str(self.id)+".txt", "a+") as myfile:
             myfile.write("sending message "+message+"; at stage: "+str(stage)+"\n" )
+        self.prev_stage = self.pc_stage
         self.pc_stage = stage
         self.states = {}
         if len(request) > 0:
@@ -731,7 +743,7 @@ class Process():
         try:
             Connection_Client(GPORT + self.coordinator, self.id, message).run()
         except:
-            donothing
+            donothing = 0
 
         if should_crash_after_send:
             self.crash()
