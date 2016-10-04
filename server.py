@@ -340,16 +340,34 @@ class Process():
             if "STATE_RETURN" in c_array[0]:
                 print "STATE_RETURN:", c_array
                 state = ast.literal_eval(c_array[1])
-                p_id = int(c_array[3].split("=")[1])
+                stage = int(c_array[2])
+                dt_index = int(c_array[3])
+                p_id = int(c_array[4].split("=")[1])
+
                 self.states[p_id] = True
                 print "MY PREV STAGE", self.prev_stage
-                #CHANGE BACK TO:
-                #if state["vote"] == True and  self.prev_stage != 1:
-                if state["vote"] == True and  self.prev_stage != -1:
+
+                if dt_index < self.dt_index:
+                    # ABORT:
+                    print "TR1 TIMEOUT ABORT"
                     self.prev_stage = 0
                     self.send_abort()
-                if int(c_array[2]) > 0:
-                    self.pc_stage = int(c_array[2])
+
+                if state["vote"] == True:
+                    # ABORT:
+                    print "TR1 VOTE NO ABORT"
+                    self.prev_stage = 0
+                    self.send_abort()
+
+                if stage == 2 and self.pc_stage != 2:
+                    # PRECOMMIT TR4
+                    print "PRECOMMIT TR4"
+                    self.pc_stage = 1
+
+                if stage == 3:
+                    # COMMIT TR2
+                    print "PRECOMMIT TR2"
+                    self.pc_stage = 2
 
             # commands from coordinator to process
             if VOTE_REQ in c_array[0]:
@@ -382,7 +400,7 @@ class Process():
                             self.songs = ast.literal_eval(log_data["db"])
 
                     self.coordinator = p_id
-                    if self.dt_index < int(c_array[0].split("_")[1]):
+                    if self.dt_index < int(c_array[0].split("_")[1]) or self.pc_stage != 0:
                         print "My dt_ind", self.dt_index, ":", c_array[0].split("_")[1]
                         print "GETTING TABLES"
                         self.recieve_request(GET_TABLES)
@@ -424,6 +442,7 @@ class Process():
     # 3PC methods
     def do_3pc(self, p_t_o, c_t_o):
         # check if coordinator
+        # print "PREVIOUS STAGE", self.prev_stage
         if self.is_coordinator():
             if not c_t_o.waiting():
                 # coordinator VOTE REQ STAGE
@@ -444,10 +463,13 @@ class Process():
                         if p_id != self.coordinator and self.states[p_id] == False:
                             should_abort = True
 
+                    if self.pc_stage == 1 and self.prev_stage == 1:
+                        should_abort = True
+
                     if should_abort:
                         print("aborted!")
-                        self.send_abort()
                         self.pc_stage = 0
+                        self.send_abort()
 
                     else:
                         self.send_req(PRE_COMMIT, PRECOMMIT_STAGE)
@@ -544,6 +566,7 @@ class Process():
                     Connection_Client(GPORT+ p_id, self.id, SHOULD_ABORT).run()
                 except:
                     continue
+        print "I'm ABORTING"
         self.abort()
 
     def abort(self):
@@ -643,11 +666,13 @@ class Process():
         elif data["command"] == SET_TABLES:
             print "SETTING TABLES", data
             self.songs = ast.literal_eval(data["message"].replace(" ", ""))
+            self.pc_stage = 0
+            self.log(STABLE)
             print self.songs
 
         elif data["command"] == "STATE_REQ":
             print "Responding with the state"
-            message = "STATE_RETURN " + str(self.master_commands).replace(" ", "") + " " + str(self.pc_stage)
+            message = "STATE_RETURN " + str(self.master_commands).replace(" ", "") + " " + str(self.prev_stage) + " " + str(self.dt_index)
             self.pc_stage = 0
 
         try:
