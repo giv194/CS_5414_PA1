@@ -1,0 +1,2 @@
+There are no requirements for this program to run correctly. (both Kirill and Paul have anaconda installed)
+This file should be run with python 2.7.
