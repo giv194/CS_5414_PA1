@@ -2,5 +2,5 @@
 ps aux | grep "server.py" | awk '{print $2}' | xargs kill
 for f in DTLog_*.txt;
 do
-  > $f
+  rm $f
 done
