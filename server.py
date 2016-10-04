@@ -57,8 +57,6 @@ VOTE_STAGE = 1
 PRECOMMIT_STAGE = 2
 COMMIT_STAGE = 3
 
-TERMINATION = False
-
 def check_port(port):
     return port >= GPORT and port < (GPORT+10000)
 
@@ -125,7 +123,7 @@ class Server(threading.Thread):
         t_o = TimeOut()
         hb_t_0 = TimeOut(HB_TIMEOUT)
         c_t_o = TimeOut(HB_TIMEOUT)
-        p_t_o = TimeOut(0.3 * TIMEOUT)
+        p_t_o = TimeOut(TIMEOUT)
         with open("output_"+str(self.process.id) +".txt", "a+") as myfile:
             myfile.write("running "+str(self.port)+"\n" )
         while running:
@@ -341,9 +339,17 @@ class Process():
 
             if "STATE_RETURN" in c_array[0]:
                 print "STATE_RETURN:", c_array
-                TERMINATION = false;
-                print ast.literal_eval(c_array[1])
-                #set appropriate flags for commit/abort
+                state = ast.literal_eval(c_array[1])
+                p_id = int(c_array[3].split("=")[1])
+                self.states[p_id] = True
+                print "MY PREV STAGE", self.prev_stage
+                #CHANGE BACK TO:
+                #if state["vote"] == True and  self.prev_stage != 1:
+                if state["vote"] == True and  self.prev_stage != -1:
+                    self.prev_stage = 0
+                    self.send_abort()
+                if int(c_array[2]) > 0:
+                    self.pc_stage = int(c_array[2])
 
             # commands from coordinator to process
             if VOTE_REQ in c_array[0]:
@@ -412,11 +418,13 @@ class Process():
                 myfile.write("I AM THE COORDINATOR "+str(self.id)+"\n" )
             if self.m_client:
                 self.m_client.client.send("coordinator " + str(self.id) + "\n")
+            if self.pc_stage == -1:
+                self.termination()
 
     # 3PC methods
     def do_3pc(self, p_t_o, c_t_o):
         # check if coordinator
-        if self.is_coordinator() and not TERMINATION:
+        if self.is_coordinator():
             if not c_t_o.waiting():
                 # coordinator VOTE REQ STAGE
                 if self.pc_stage == VOTE_STAGE:
@@ -463,11 +471,21 @@ class Process():
                     self.log(COMMIT)
                     self.commit(self.master_commands["commit"])
                     self.pc_stage = 0
+
+                if self.pc_stage == -1:
+                    print "WAITING FOR STAGES"
+                    temp = self.prev_stage
+                    self.pc_stage = self.prev_stage
+                    self.prev_stage = temp
+                    print "NEXT STAGE WILL BE", self.pc_stage
+                    c_t_o.reset()
+                    return
+
         else:
             # NOT the coordinator
             if not p_t_o.waiting():
-                print "WE TIMED OUT ON", self.pc_stage
                 if self.prev_stage == self.pc_stage:
+                    print "WE TIMED OUT ON", self.pc_stage
                     self.termination()
                 else:
                     self.prev_stage = self.pc_stage
@@ -476,22 +494,32 @@ class Process():
 
     def termination(self):
         print "WE ARE IN TERMINATION:"
-        if not TERMINATION
+        if not self.is_coordinator():
             self.up_set.discard(self.coordinator)
-        if self.coordinator == self.id:
-            for p_id in self.up_set:
-                if p_id != self.id:
-                    try:
-                        Connection_Client(GPORT+p_id, self.id, HEARTBEAT + "_0").run()
-                    except:
-                        donothing = 0
+            self.elect_coordinator()
+            if self.coordinator == self.id:
+                for p_id in self.up_set:
+                    if p_id != self.id:
+                        try:
+                            Connection_Client(GPORT+p_id, self.id, HEARTBEAT + "_0").run()
+                        except:
+                            donothing = 0
+                print "SENDING STATE REQUEST"
+                for p_id in self.up_set:
+                    if p_id != self.id:
+                        try:
+                            Connection_Client(GPORT+p_id, self.id, "STATE_REQ " + str(self.dt_index)).run()
+                        except:
+                            donothing = 0
+            self.pc_stage = -1
+        else:
+            print "SENDING STATE REQUEST"
             for p_id in self.up_set:
                 if p_id != self.id:
                     try:
                         Connection_Client(GPORT+p_id, self.id, "STATE_REQ " + str(self.dt_index)).run()
                     except:
                         donothing = 0
-        TERMINATION = True
 
 
     def commit(self,request):
@@ -536,6 +564,7 @@ class Process():
         should_crash_after_send = False
 
         print "doing send request ",stage," and message ", message
+        print pids
         if self.pc_stage == VOTE_STAGE and self.master_commands['crashVoteREQ'] != False:
             pids = self.master_commands['crashVoteREQ']
             should_crash_after_send = True
@@ -563,15 +592,22 @@ class Process():
     # process
     def recieve_request(self, request):
         data = parse_process_message(request)
+        print "PROCESS DATA", data
         message = ""
         should_crash_after_send = False
 
-        if data["command"] == VOTE_REQ:
+        if data["command"] == SHOULD_ABORT:
+            message = SHOULD_ABORT
+            self.pc_stage = 0
+            self.log(message)
+            self.abort()
+
+        elif data["command"] == VOTE_REQ:
             self.dt_index += 1
             self.master_commands["commit"] = data["message"].strip()
             message = VOTE_YES
+            self.pc_stage = VOTE_STAGE
             self.log(message)
-            self.pc_stage = PRECOMMIT_STAGE
             print self.master_commands
             #Abort:
             if self.master_commands["vote"] == True:
@@ -585,13 +621,14 @@ class Process():
 
         elif data["command"] == PRE_COMMIT:
             message = PRE_COMMIT_ACK
+            self.pc_stage = PRECOMMIT_STAGE
             self.log(message)
-            self.pc_stage = COMMIT_STAGE
             if self.master_commands["crashAfterAck"]:
                 should_crash_after_send = True
 
         elif data["command"] == COMMIT:
             message = COMMIT
+            self.pc_stage = COMMIT_STAGE
             self.log(COMMIT)
             self.commit(self.master_commands["commit"])
             self.pc_stage = 0
@@ -611,6 +648,7 @@ class Process():
         elif data["command"] == "STATE_REQ":
             print "Responding with the state"
             message = "STATE_RETURN " + str(self.master_commands).replace(" ", "") + " " + str(self.pc_stage)
+            self.pc_stage = 0
 
         try:
             Connection_Client(GPORT + self.coordinator, self.id, message).run()
