@@ -5,7 +5,7 @@ from os.path import isfile, join
 import shutil
 
 test_output = 'test_output'
-tests = 'more_tests'
+tests = 'tests'
 try:
     shutil.rmtree(test_output)
 except:

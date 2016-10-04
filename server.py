@@ -402,9 +402,8 @@ class Process():
                         if (self.coordinator == None):
                             #pickup tables from the log
                             self.songs = ast.literal_eval(log_data["db"])
-
                     self.coordinator = p_id
-                    if self.dt_index < int(c_array[0].split("_")[1]) or self.pc_stage != 0:
+                    if self.dt_index < int(c_array[0].split("_")[1]) or self.pc_stage != 0 or (log_data != None and p_id not in log_data["up_set"]):
                         print "My dt_ind", self.dt_index, ":", c_array[0].split("_")[1]
                         print "GETTING TABLES"
                         self.recieve_request(GET_TABLES)
@@ -689,7 +688,7 @@ class Process():
 
     def log(self, message):
         with open("DTLog_" + str(self.id) + ".txt", "w") as f:
-            f.write(json.dumps({"dt_index": self.dt_index,"coordinator": self.coordinator, "message": message, "stage": self.pc_stage, "db": str(self.songs), "up_set": str([x for x in self.up_set])}))
+            f.write(json.dumps({"dt_index": self.dt_index,"coordinator": self.coordinator, "message": message, "stage": self.pc_stage, "db": str(self.songs), "up_set": [x for x in self.up_set]}))
 
     def read_log(self):
         data = None
