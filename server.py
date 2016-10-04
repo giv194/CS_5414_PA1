@@ -136,7 +136,20 @@ class Server(threading.Thread):
                     if not self.process.is_coordinator():
                         if not t_o.waiting():
                             print "timeout"
-                            self.process.elect_coordinator()
+                            #check DT_log if you're the first to wake up:
+                            log_data = self.process.read_log()
+                            if log_data != None:
+                                if len(log_data["up_set"]) == 1 or self.process.coordinator != None:
+                                    self.process.elect_coordinator()
+                                else:
+                                    for p_id != self.process.up_set:
+                                        try:
+                                            #FINISH THE COMMAND BUFFER!!!
+                                            Connection_Client(GPORT+p_id, self.process.id, "COMMAND " + "" +str(self.process.dt_index)).run()
+                                        except:
+                                            donothing = 0
+                            else:
+                                self.process.elect_coordinator()
                             t_o.reset()
                     else:
                         if not hb_t_0.waiting():
