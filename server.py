@@ -26,11 +26,12 @@ BASE_STATE = {
     "crashAfterAck": False,
     "crashVoteREQ": False,
     "crashPartialCommit": False,
-    "crashPartialPreCommit": False
+    "crashPartialPreCommit": False,
+    "commit": ""
 }
 
 # Timeout value
-TIMEOUT = 1
+TIMEOUT = 5
 HB_TIMEOUT = 0.2*TIMEOUT
 
 GPORT = 20000
@@ -139,15 +140,21 @@ class Server(threading.Thread):
                             #check DT_log if you're the first to wake up:
                             log_data = self.process.read_log()
                             if log_data != None:
+                                print "RESTORING DATA!"
+                                self.process.songs = ast.literal_eval(log_data["db"])
+                                self.process.dt_index = log_data["dt_index"]
                                 if len(log_data["up_set"]) == 1 or self.process.coordinator != None:
                                     self.process.elect_coordinator()
                                 else:
-                                    for p_id != self.process.up_set:
-                                        try:
-                                            #FINISH THE COMMAND BUFFER!!!
-                                            Connection_Client(GPORT+p_id, self.process.id, "COMMAND " + "" +str(self.process.dt_index)).run()
-                                        except:
-                                            donothing = 0
+                                    for p_id in self.process.up_set:
+                                        if p_id != self.process.id and self.process.master_commands["commit"] != "":
+                                            try:
+                                                #FINISH THE COMMAND BUFFER!!!
+                                                print "SEND COMMAND BUFFER: ", str(self.process.master_commands["commit"]) + " COMMAND"
+                                                Connection_Client(GPORT+p_id, self.process.id, str(self.process.master_commands["commit"]) + " COMMAND").run()
+                                            except:
+                                                donothing = 0
+                                self.process.m_client.client.send("coordinator " + str(self.process.id) + "\n")
                             else:
                                 self.process.elect_coordinator()
                             t_o.reset()
@@ -160,6 +167,8 @@ class Server(threading.Thread):
                                     except:
                                         donothing = 0
                             hb_t_0.reset()
+                            if self.process.master_commands["commit"] != "" and self.process.pc_stage == 0:
+                                self.process.process_command(self.process.master_commands["commit"], self.process.m_port)
                 else:
                     self.process.do_3pc(p_t_o, c_t_o)
             inputready,outputready,exceptready = select.select(input,[],[], 0)
@@ -277,7 +286,10 @@ class Process():
     def process_command(self, command_string, port):
         command_string = command_string.replace("\n", "")
         c_array = command_string.split(" ")
-        if(port == self.m_port): #PROCESS MASTER COMMANDS:
+        if(port == self.m_port or "COMMAND" in c_array): #PROCESS MASTER COMMANDS:
+            if "COMMAND" in c_array and self.is_coordinator():
+                self.up_set.add(int(c_array[4].split("=")[1]))
+
             print 'Master command is: ' + (" ".join(c_array))
             #Crash Command:
             command = c_array[0]
@@ -315,22 +327,24 @@ class Process():
                 return to_return
 
             # 3PC commands:
-            elif command == "add"  and self.coordinator == self.id:
-                # self.songs[c_array[1]] = c_array[2]
+            elif command == "add":
                 self.master_commands["commit"] = command_string
-                print c_array
-                # increase dt_index for the master
-                self.dt_index += 1
-                self.send_req(VOTE_REQ, VOTE_STAGE, command_string)
-                return None
-            elif command == "delete" and self.coordinator == self.id:
-                # self.songs = {key: value for key, value in self.songs.items() if key != c_array[1]}
+                if self.coordinator == self.id:
+                    # self.songs[c_array[1]] = c_array[2]
+                    print c_array
+                    # increase dt_index for the master
+                    self.dt_index += 1
+                    self.send_req(VOTE_REQ, VOTE_STAGE, command_string.replace("COMMAND ", ""))
+                    return None
+            elif command == "delete":
                 self.master_commands["commit"] = command_string
-                print c_array[1:]
-                # increase dt_index for the master
-                self.dt_index += 1
-                self.send_req(VOTE_REQ, VOTE_STAGE, command_string)
-                return None
+                if self.coordinator == self.id:
+                    # self.songs = {key: value for key, value in self.songs.items() if key != c_array[1]}
+                    print c_array[1:]
+                    # increase dt_index for the master
+                    self.dt_index += 1
+                    self.send_req(VOTE_REQ, VOTE_STAGE, command_string.replace("COMMAND ", ""))
+                    return None
         else:
             # commands from process to coordinator
             if VOTE_YES in c_array[0]:
@@ -416,9 +430,10 @@ class Process():
                             #pickup tables from the log
                             self.songs = ast.literal_eval(log_data["db"])
                     self.coordinator = p_id
-                    if self.dt_index < int(c_array[0].split("_")[1]) or self.pc_stage != 0 or (log_data != None and p_id not in log_data["up_set"]):
+                    if (self.dt_index < int(c_array[0].split("_")[1])) or self.pc_stage != 0 or (log_data != None and p_id not in log_data["up_set"]):
                         print "My dt_ind", self.dt_index, ":", c_array[0].split("_")[1]
                         print "GETTING TABLES"
+                        self.dt_index = int(c_array[0].split("_")[1])
                         self.recieve_request(GET_TABLES)
             
             elif "STATE_REQ" in c_array[0]:
