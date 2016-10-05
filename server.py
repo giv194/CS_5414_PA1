@@ -31,7 +31,7 @@ BASE_STATE = {
 }
 
 # Timeout value
-TIMEOUT = 0.5
+TIMEOUT = 1
 HB_TIMEOUT = 0.2*TIMEOUT
 
 GPORT = 20000
@@ -147,7 +147,8 @@ class Server(threading.Thread):
                                                 Connection_Client(GPORT+p_id, self.process.id, str(self.process.master_commands["commit"]) + " COMMAND").run()
                                             except:
                                                 donothing = 0
-                                self.process.m_client.client.send("coordinator " + str(log_data["coordinator"]) + "\n")
+                                if self.process.coordinator == None:
+                                    self.process.m_client.client.send("coordinator " + str(self.process.id) + "\n")
                             else:
                                 self.process.elect_coordinator()
                             t_o.reset()
@@ -157,7 +158,7 @@ class Server(threading.Thread):
                                 if p_id != self.process.id:
                                     try:
                                         Connection_Client(GPORT+p_id, self.process.id, HEARTBEAT + "_" +str(self.process.dt_index)).run()
-                                        # self.process.m_client.client.send("coordinator " + str(self.process.id) + "\n")
+                                        self.process.m_client.client.send("coordinator " + str(self.process.id) + "\n")
                                     except:
                                         donothing = 0
                             hb_t_0.reset()
@@ -320,9 +321,9 @@ class Process():
 
             # 3PC commands:
             elif command == "add":
-                process_lock.acquire()
                 self.master_commands["commit"] = command_string
                 if self.coordinator == self.id:
+                    process_lock.acquire()
                     # self.songs[c_array[1]] = c_array[2]
                     print c_array
                     # increase dt_index for the master
@@ -330,9 +331,9 @@ class Process():
                     self.send_req(VOTE_REQ, VOTE_STAGE, command_string.replace("COMMAND ", ""))
                     return None
             elif command == "delete":
-                process_lock.acquire()
                 self.master_commands["commit"] = command_string
                 if self.coordinator == self.id:
+                    process_lock.acquire()
                     # self.songs = {key: value for key, value in self.songs.items() if key != c_array[1]}
                     print c_array[1:]
                     # increase dt_index for the master
