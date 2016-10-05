@@ -55,3 +55,5 @@ the receiver process crashes itself after sending commit to processes 2 3 if it 
 TESTING
 ____________________________
 There is a file called grading.py which will run simple test cases in tests folder where you specify input cases in .input and expected output in .output.
+
+We have added additional tests in the directory "more_tests".

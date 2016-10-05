@@ -136,6 +136,8 @@ class Server(threading.Thread):
                                 self.process.songs = ast.literal_eval(log_data["db"])
                                 self.process.dt_index = log_data["dt_index"]
                                 self.process.up_set = set([x for x in log_data["up_set"]])
+                                if log_data["stage"] != 3:
+                                    self.process.pc_stage = log_data["stage"]
                                 if len(log_data["up_set"]) == 1 or self.process.coordinator != None:
                                     self.process.elect_coordinator()
                                 else:
@@ -404,8 +406,9 @@ class Process():
                 if stage == 2 and self.pc_stage != 2:
                     # PRECOMMIT TR4
                     print "PRECOMMIT TR4"
-                    # self.send_req(PRE_COMMIT, PRECOMMIT_STAGE)
-                    self.pc_stage = 2
+                    self.pc_stage = 1
+                    self.send_req(PRE_COMMIT, PRECOMMIT_STAGE)
+                    # self.pc_stage = 2
 
                 if stage == 3:
                     # COMMIT TR2
@@ -437,6 +440,8 @@ class Process():
                     log_data = self.read_log()
                     if log_data != None:
                         self.dt_index = log_data["dt_index"]
+                        if log_data["stage"] != 3:
+                            self.pc_stage = log_data["stage"]
                         if (self.coordinator == None):
                             #pickup tables from the log
                             self.songs = ast.literal_eval(log_data["db"])
@@ -446,10 +451,10 @@ class Process():
                         print "GETTING TABLES"
                         self.dt_index = int(c_array[0].split("_")[1])
                         self.recieve_request(GET_TABLES)
-            
+
             elif "STATE_REQ" in c_array[0]:
                 print "STATE_REQ recieved!"
-                self.recieve_request(command_string) 
+                self.recieve_request(command_string)
         # return 'wtf?'
         # return "ack abort"
         return None
@@ -723,7 +728,7 @@ class Process():
         try:
             Connection_Client(GPORT + self.coordinator, self.id, message).run()
         except:
-            donothing = 0 
+            donothing = 0
 
         if should_crash_after_send:
             self.crash()
@@ -735,7 +740,7 @@ class Process():
     def read_log(self):
         data = None
         try:
-            with open('DTLog_' + str(self.id) + ".txt") as data_file:    
+            with open('DTLog_' + str(self.id) + ".txt") as data_file:
                 data = json.load(data_file)
             return data
         except:
